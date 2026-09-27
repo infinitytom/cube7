@@ -5,8 +5,10 @@ signal coins_changed(value: int)
 signal energy_changed(value: int)
 signal shield_changed(value: int)
 signal nova_say(text: String)
+@warning_ignore("unused_signal")
 signal form_changed(index: int)
 signal device_changed(kind: String)
+@warning_ignore("unused_signal")
 signal shake(amount: float)
 
 const ENERGY_PER_SHIELD := 10

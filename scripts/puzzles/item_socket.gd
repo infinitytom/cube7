@@ -6,7 +6,7 @@ signal filled
 
 @export var accepts := "crystal"
 @export var voxel_pos := Vector3i.ZERO
-@export var fill_block := Blocks.CRYSTAL
+@export var fill_block: int = Blocks.CRYSTAL
 
 var world: VoxelWorld
 var done := false

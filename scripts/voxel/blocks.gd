@@ -54,7 +54,7 @@ static func _static_init() -> void:
 	for t in COUNT:
 		var d: Dictionary = DEFS.get(t, {})
 		colors[t] = d.get("color", Color.MAGENTA)
-		render[t] = Render.NONE if t == AIR else int(d.get("render", Render.OPAQUE))
+		render[t] = 0 if t == AIR else int(d.get("render", 1))
 		impact[t] = float(d.get("impact", -1.0))
 		drill[t] = 1 if d.get("drill", false) else 0
 		conductive[t] = 1 if d.get("conductive", false) else 0

@@ -135,7 +135,10 @@ func _fmt(t: String) -> String:
 
 func _refresh_stats() -> void:
 	_coins.text = "◆ 金币  %d" % GameState.coins
-	_energy.text = "⚡ 能源  %d / %d" % [GameState.energy, GameState.ENERGY_PER_SHIELD]
+	if GameState.shield < GameState.max_shield:
+		_energy.text = "⚡ 能源  %d / %d（集满修复护盾）" % [GameState.energy, GameState.ENERGY_PER_SHIELD]
+	else:
+		_energy.text = "⚡ 能源  %d" % GameState.energy
 	_shield.text = "护盾  " + "■".repeat(GameState.shield) + "□".repeat(GameState.max_shield - GameState.shield)
 
 func _refresh_forms() -> void:

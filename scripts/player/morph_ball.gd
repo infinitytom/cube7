@@ -33,7 +33,7 @@ const IMPACT_MIN := 1.8
 const DASH_SPEED := 11.5
 const GRAB_RANGE := 2.2
 
-var form := BALL
+var form: int = BALL
 var form_locked := false
 var grounded := false
 var world: VoxelWorld
