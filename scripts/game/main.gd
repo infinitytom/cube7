@@ -84,4 +84,4 @@ func _start_play(resumed := false) -> void:
 		GameState.camera.yaw = level.call("spawn_yaw")
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	hud.show_area_title("区域 1", "翠绿温室", "继续旅程" if resumed else "")
+	hud.show_area_title("第一章", "翠绿温室群岛", "继续旅程" if resumed else "")

@@ -287,7 +287,7 @@ func _build_ui() -> void:
 	_ui.add_child(_hints)
 	_refresh_glyphs()
 	# 版本号
-	var ver := UIKit.label("原型 v0.6  ·  区域 1", 15, Color(1, 1, 1, 0.45))
+	var ver := UIKit.label("原型 v0.7  ·  第一章", 15, Color(1, 1, 1, 0.45))
 	UIKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-280, -52, -40, -26))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ui.add_child(ver)
@@ -323,7 +323,7 @@ func _build_logo() -> void:
 	_emblem.position = Vector2(0, 14)
 	_emblem.size = Vector2(150, 150)
 	_logo.add_child(_emblem)
-	_title_label = UIKit.label("立方-7", 132, Color.WHITE, true)
+	_title_label = UIKit.label("方舟星球", 124, Color.WHITE, true)
 	UIKit.outline(_title_label, 10, Color(0.04, 0.1, 0.22, 0.75))
 	_title_label.position = Vector2(160, 0)
 	_title_label.add_theme_constant_override("shadow_offset_x", 0)
@@ -345,11 +345,11 @@ func _build_logo() -> void:
 	dot.position = Vector2(-4, -3)
 	dot.rotation = PI / 4.0
 	_rule.add_child(dot)
-	var sub := UIKit.label("C U B E  —  7", 24, UIKit.ACCENT, true)
+	var sub := UIKit.label("V O X E L   A R K", 24, UIKit.ACCENT, true)
 	sub.add_theme_constant_override("outline_size", 0)
 	sub.position = Vector2(168, 196)
 	_logo.add_child(sub)
-	var tag := UIKit.outline(UIKit.label("变形 · 滚动 · 把整个世界拆开来看看", 22, Color(1, 1, 1, 0.82)), 5, Color(0, 0, 0, 0.35))
+	var tag := UIKit.outline(UIKit.label("为了救下这颗星球，她把它拆成了方块。", 22, Color(1, 1, 1, 0.82)), 5, Color(0, 0, 0, 0.35))
 	tag.position = Vector2(168, 236)
 	_logo.add_child(tag)
 	for c in _logo.get_children():
@@ -532,7 +532,7 @@ func _show_menu() -> void:
 	if latest >= 0:
 		var d := SaveGame.read(latest)
 		first = _item("继续游戏", func() -> void: _continue(latest),
-			"存档 %d  ·  区域 1 翠绿温室  ·  %s" % [latest + 1, SaveGame.format_time(float(d.get("play_time", 0)))])
+			"存档 %d  ·  第一章 翠绿温室群岛  ·  %s" % [latest + 1, SaveGame.format_time(float(d.get("play_time", 0)))])
 	var ng := _item("新游戏", func() -> void: _open_slots("new"))
 	if first == null:
 		first = ng
@@ -613,9 +613,9 @@ func _open_slots(mode: String) -> void:
 		else:
 			var when := Time.get_datetime_string_from_unix_time(int(float(d.get("saved_at", 0))) + 8 * 3600, true)
 			var cleared := bool((d.get("flags", {}) as Dictionary).get("gh_clear", false))
-			b.text = "存档 %d   ·   区域 1 翠绿温室%s\n游戏时间 %s   ·   记忆碎片 %d/3   ·   金币 %d   ·   %s" % [
+			b.text = "存档 %d   ·   第一章 翠绿温室群岛%s\n游戏时间 %s   ·   救出噗噗 %d/3   ·   记忆碎片 %d/3   ·   %s" % [
 				i + 1, "   ·   已通关" if cleared else "", SaveGame.format_time(float(d.get("play_time", 0))),
-				(d.get("fragments", []) as Array).size(), int(d.get("coins", 0)), when.substr(5, 11)]
+				(d.get("seeds", []) as Array).size(), (d.get("fragments", []) as Array).size(), when.substr(5, 11)]
 		UIKit.juice(b)
 		b.pressed.connect(func() -> void: _pick_slot(i, d.is_empty()))
 		v.add_child(b)
@@ -680,7 +680,7 @@ func _open_donate() -> void:
 	v.add_theme_constant_override("separation", 12)
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	_donate.add_child(v)
-	var t := UIKit.label("喜欢《立方-7》吗？", 32, UIKit.TEXT, true)
+	var t := UIKit.label("喜欢《方舟星球》吗？", 32, UIKit.TEXT, true)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
 	var body := UIKit.label("游戏完全免费。如果它让你开心，\n可以请作者喝一杯咖啡，支持继续开发～", 19, UIKit.DIM)

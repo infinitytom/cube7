@@ -9,7 +9,7 @@ signal block_broken(pos: Vector3i, type: int)
 signal item_dropped(item_id: String, world_pos: Vector3)
 
 const VOXEL := 0.5          ## 1 体素 = 0.5 米
-const CHUNK := 16
+const CHUNK := 8            ## 小区块：破坏时只需重建很小的一块，避免卡顿
 const FALL_STEP := 0.05     ## 砂块下落一格的间隔（秒）
 
 const DIRS: Array[Vector3i] = [
@@ -228,22 +228,122 @@ func try_break_any(p: Vector3i) -> void:
 	set_block(p, Blocks.AIR)
 	_spawn_debris(voxel_center(p), Blocks.colors[t])
 
-## 以世界坐标为球心破坏一片方块，返回破坏数量
-func break_sphere(center: Vector3, radius: float, tool: String, power: float) -> int:
+## 以世界坐标为球心破坏一片方块，返回破坏数量。
+## 为了更像真实的破坏，形状带随机性：
+##   · 每一格的“破坏半径”都随机抖动，坑口边缘参差不齐
+##   · 沿撞击方向拉长，撞得越狠坑越深
+##   · 坑外一圈的方块有一定概率被震裂
+##   · 破坏后和大地断开的小碎块会整块掉落、翻滚、落地再碎
+func break_sphere(center: Vector3, radius: float, tool: String, power: float, dir := Vector3.ZERO) -> int:
 	var c := world_to_voxel(center)
-	var r := int(ceil(radius / VOXEL))
+	var r := int(ceil(radius * 1.35 / VOXEL))
 	var count := 0
+	var broken: Array[Vector3i] = []
+	var d := dir.normalized() if dir.length() > 0.01 else Vector3.ZERO
 	for z in range(c.z - r, c.z + r + 1):
 		for y in range(c.y - r, c.y + r + 1):
 			for x in range(c.x - r, c.x + r + 1):
 				var p := Vector3i(x, y, z)
-				if voxel_center(p).distance_to(center) > radius:
+				if get_block(p) == Blocks.AIR:
 					continue
-				if try_break(p, tool, power, count < 14):
+				var off := voxel_center(p) - center
+				# 沿撞击方向压扁距离 → 坑沿着冲击方向更深
+				var along := off.dot(d)
+				var dist := (off - d * along).length() + absf(along) * (0.7 if along > 0.0 else 1.0)
+				var jitter := _rng.randf_range(0.95, 1.22)   # 只往外抖：坑不会比原来小，边缘更参差
+				var inside := dist <= radius * jitter
+				var fringe := not inside and dist <= radius * 1.35 and _rng.randf() < 0.28
+				if (inside or fringe) and try_break(p, tool, power, count < 16):
 					count += 1
+					broken.append(p)
 	if count > 0:
 		GameState.shake.emit(minf(0.08 + count * 0.02, 0.35))
+		detach_floating(broken)
 	return count
+
+var _rng := RandomNumberGenerator.new()
+
+const DETACH_LIMIT := 48
+
+## 检查被破坏位置周围：和大地失去连接、又足够小的一团方块会变成掉落的碎块。
+## 连到打不坏的方块（合金、金属……）、或者一团超过 DETACH_LIMIT 格，都算“有支撑”。
+func detach_floating(around: Array[Vector3i]) -> void:
+	var checked := {}
+	for p in around:
+		for dd in DIRS:
+			var q: Vector3i = p + dd
+			if checked.has(q) or not _detachable(get_block(q)):
+				continue
+			var comp := _component(q, checked)
+			if comp.is_empty():
+				continue
+			_spawn_chunk(comp)
+
+func _detachable(t: int) -> bool:
+	return t != Blocks.AIR and Blocks.falls[t] == 0 and (Blocks.impact[t] >= 0.0 or Blocks.drill[t] == 1)
+
+## 从 start 出发找连通块；有支撑返回空数组
+func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
+	var out: Array[Vector3i] = []
+	var queue: Array[Vector3i] = [start]
+	var seen := {start: true}
+	var supported := false
+	while not queue.is_empty():
+		var q: Vector3i = queue.pop_back()
+		var t := get_block(q)
+		if t == Blocks.AIR:
+			continue
+		if not _detachable(t):
+			supported = true
+			break
+		out.append(q)
+		if out.size() > DETACH_LIMIT or q.y <= 0:
+			supported = true
+			break
+		for dd in DIRS:
+			var n: Vector3i = q + dd
+			if not seen.has(n) and get_block(n) != Blocks.AIR:
+				seen[n] = true
+				queue.append(n)
+	for q in out:
+		checked[q] = true
+	if supported:
+		return []
+	return out
+
+func _spawn_chunk(cells: Array[Vector3i]) -> void:
+	var sum := Vector3.ZERO
+	for q in cells:
+		sum += voxel_center(q)
+	var mid := sum / cells.size()
+	var list := []
+	for q in cells:
+		list.append([voxel_center(q) - mid, get_block(q)])
+	for q in cells:
+		set_block(q, Blocks.AIR)
+		GameState.blocks_broken += 1
+	var ch := VoxelChunk.new()
+	ch.world = self
+	ch.blocks = list
+	add_child(ch)
+	ch.global_position = mid
+	ch.angular_velocity = Vector3(_rng.randf_range(-2, 2), _rng.randf_range(-1, 1), _rng.randf_range(-2, 2))
+	ch.linear_velocity = Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.5, 2.0), _rng.randf_range(-1, 1))
+
+## 在世界坐标处播放破坏特效和掉落（碎块落地时用）
+func break_fx_at(pos: Vector3, t: int, drops: bool) -> void:
+	_spawn_debris(pos, Blocks.colors[t])
+	Sfx.break_sound(t, pos)
+	if not drops:
+		return
+	var d := Blocks.def(t)
+	for i in int(d.get("coins", 0)):
+		PickupScript.spawn(self, "coin", pos)
+	for i in int(d.get("energy", 0)):
+		PickupScript.spawn(self, "energy", pos)
+	var item: String = d.get("item", "")
+	if item != "":
+		item_dropped.emit(item, pos)
 
 func _spawn_break_fx(p: Vector3i, t: int) -> void:
 	var pos := voxel_center(p)
@@ -258,32 +358,52 @@ func _spawn_break_fx(p: Vector3i, t: int) -> void:
 	if item != "":
 		item_dropped.emit(item, pos)
 
-## 碎屑只是视觉粒子，0.5 秒内消散，不参与物理
+## 碎屑只是视觉粒子，0.6 秒内消散，不参与物理。
+## 同一帧里的所有碎屑合并成一个粒子系统（按位置发射、各自带方块颜色），大破坏也不会卡。
+var _debris_pts := PackedVector3Array()
+var _debris_cols := PackedColorArray()
+static var _debris_mesh: BoxMesh
+
 func _spawn_debris(pos: Vector3, color: Color) -> void:
+	if _debris_pts.size() < 48:
+		_debris_pts.append(to_local(pos))
+		_debris_cols.append(color)
+
+func _flush_debris() -> void:
+	if _debris_pts.is_empty():
+		return
+	if _debris_mesh == null:
+		_debris_mesh = BoxMesh.new()
+		_debris_mesh.size = Vector3.ONE * 0.14
+		var mat := StandardMaterial3D.new()
+		mat.vertex_color_use_as_albedo = true
+		mat.roughness = 0.8
+		_debris_mesh.material = mat
 	var ps := CPUParticles3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3.ONE * 0.13
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.8
-	mesh.material = mat
-	ps.mesh = mesh
-	ps.amount = 8
+	ps.mesh = _debris_mesh
+	ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+	ps.emission_points = _debris_pts
+	ps.emission_colors = _debris_cols
+	ps.amount = clampi(_debris_pts.size() * 5, 6, 80)
 	ps.one_shot = true
 	ps.explosiveness = 1.0
-	ps.lifetime = 0.5
+	ps.lifetime = 0.6
 	ps.direction = Vector3.UP
-	ps.spread = 70.0
+	ps.spread = 75.0
 	ps.initial_velocity_min = 2.0
-	ps.initial_velocity_max = 4.5
+	ps.initial_velocity_max = 5.0
 	ps.gravity = Vector3(0, -14, 0)
 	ps.angular_velocity_min = -360.0
 	ps.angular_velocity_max = 360.0
+	ps.scale_amount_min = 0.5
+	ps.scale_amount_max = 1.4
 	ps.scale_amount_curve = _shrink_curve()
+	ps.local_coords = false
 	add_child(ps)
-	ps.global_position = pos
 	ps.emitting = true
-	get_tree().create_timer(0.8).timeout.connect(ps.queue_free)
+	get_tree().create_timer(0.9).timeout.connect(ps.queue_free)
+	_debris_pts = PackedVector3Array()
+	_debris_cols = PackedColorArray()
 
 static var _curve_cache: Curve
 static func _shrink_curve() -> Curve:
@@ -302,9 +422,26 @@ func _process(delta: float) -> void:
 			_fall_timer = 0.0
 			_step_falling()
 	if not _dirty.is_empty():
-		for c in _dirty.keys():
-			_build_chunk(c)
-		_dirty.clear()
+		_rebuild_dirty()
+	_flush_debris()
+
+const REBUILD_BUDGET_MS := 6.0
+
+## 重建脏区块：先重建离主角最近的，每帧最多花 REBUILD_BUDGET_MS 毫秒，剩下的留到下一帧
+func _rebuild_dirty() -> void:
+	var keys := _dirty.keys()
+	var pl := GameState.player as Node3D
+	if pl and keys.size() > 1:
+		var pc := world_to_voxel(pl.global_position) / CHUNK
+		keys.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return (a - pc).length_squared() < (b - pc).length_squared())
+	var t0 := Time.get_ticks_usec()
+	for i in keys.size():
+		var c: Vector3i = keys[i]
+		_dirty.erase(c)
+		_build_chunk(c)
+		# 至少重建两个（通常就是主角撞到的地方），再看时间预算
+		if i >= 1 and (Time.get_ticks_usec() - t0) > REBUILD_BUDGET_MS * 1000.0:
+			break
 
 func _step_falling() -> void:
 	var current := _falling.keys()
@@ -376,7 +513,7 @@ func _mesh_shape(p: Vector3i, t: int, sh: int, vv: Array, nn: Array, cc: Array, 
 	var t10 := b10 + Vector3(0, hs[1] * VOXEL, 0)
 	var t11 := b11 + Vector3(0, hs[2] * VOXEL, 0)
 	var t01 := b01 + Vector3(0, hs[3] * VOXEL, 0)
-	var ctx := [vv, nn, cc, uu, u2, faces, _lin_colors[t], Vector2(t / 255.0, 0.0)]
+	var ctx := [vv, nn, cc, uu, u2, faces, _lin_colors[t], Vector2(t / 255.0, (_cat[t] * 16) / 255.0)]
 	# 顶面（斜面）
 	var top_n := (t10 - t00).cross(t01 - t00)
 	if top_n.y < 0.0:
@@ -435,56 +572,134 @@ func _shape_tri(ctx: Array, pts: Array, out: Vector3, uvl: Array, light: float) 
 		faces.append(pts[k])
 	ctx[5] = faces
 
+## 方块类别（给着色器用）：0 打不坏 / 1 撞得碎 / 2 只能钻 / 3 松软（砂、松土）
+func _category(t: int) -> int:
+	if Blocks.falls[t] == 1 or Blocks.soft[t] == 1:
+		return 3
+	if Blocks.impact[t] >= 0.0:
+		return 1
+	if Blocks.drill[t] == 1:
+		return 2
+	return 0
+
+# 网格生成用的缓冲（成员变量，避免 Packed 数组放进 Array 后无法原地追加）
+var _bv: Array = []
+var _occ := PackedByteArray()
+var _cat := PackedByteArray()
+
 func _build_chunk(c: Vector3i) -> void:
 	var origin := c * CHUNK
 	if origin.x < 0 or origin.y < 0 or origin.z < 0 or origin.x >= size.x or origin.y >= size.y or origin.z >= size.z:
 		return
-	# 每种渲染方式一组顶点数组
-	# 注意：Packed 数组是值类型，放进 Array 后无法原地 append，所以先用普通 Array 收集
-	var verts: Array = [[], [], [], []]
-	var norms: Array = [[], [], [], []]
-	var cols: Array = [[], [], [], []]
-	var uvs: Array = [[], [], [], []]
-	var uv2s: Array = [[], [], [], []]
-	const CORNER_UV: Array[Vector2] = [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
-	var faces := PackedVector3Array()
-	var glass_faces := PackedVector3Array()
+	if _occ.is_empty():
+		_occ.resize(256)
+		_cat.resize(256)
+		for t in Blocks.COUNT:
+			_occ[t] = 1 if _is_occluder(t) else 0
+			_cat[t] = _category(t)
+	# 1) 把区块连同一圈邻居拷进带边框的小数组，之后查邻居不用再做边界判断
+	const P := CHUNK + 2
+	const PP := P * P
+	var pb := PackedByteArray()
+	pb.resize(P * PP)
+	var psh := PackedByteArray()
+	psh.resize(P * PP)
 	var sx := size.x
 	var sxy := size.x * size.y
-	var end := Vector3i(mini(origin.x + CHUNK, size.x), mini(origin.y + CHUNK, size.y), mini(origin.z + CHUNK, size.z))
-	var corner_sign: Array[Vector2i] = [Vector2i(-1, -1), Vector2i(1, -1), Vector2i(1, 1), Vector2i(-1, 1)]
-
-	for z in range(origin.z, end.z):
-		for y in range(origin.y, end.y):
-			for x in range(origin.x, end.x):
-				var t: int = data[x + sx * y + sxy * z]
+	for lz in P:
+		var z := origin.z - 1 + lz
+		if z < 0 or z >= size.z:
+			continue
+		for ly in P:
+			var y := origin.y - 1 + ly
+			if y < 0 or y >= size.y:
+				continue
+			var row := sx * y + sxy * z
+			var li := P * ly + PP * lz
+			for lx in P:
+				var x := origin.x - 1 + lx
+				if x < 0 or x >= sx:
+					continue
+				pb[li + lx] = data[row + x]
+				psh[li + lx] = shapes[row + x]
+	# 2) 逐面生成
+	var v1 := PackedVector3Array(); var n1 := PackedVector3Array(); var c1 := PackedColorArray(); var u1 := PackedVector2Array(); var w1 := PackedVector2Array()
+	var v2 := PackedVector3Array(); var n2 := PackedVector3Array(); var c2 := PackedColorArray(); var u2 := PackedVector2Array(); var w2 := PackedVector2Array()
+	var v3 := PackedVector3Array(); var n3 := PackedVector3Array(); var c3 := PackedColorArray(); var u3 := PackedVector2Array(); var w3 := PackedVector2Array()
+	var faces := PackedVector3Array()
+	var glass_faces := PackedVector3Array()
+	var ex := mini(CHUNK, size.x - origin.x)
+	var ey := mini(CHUNK, size.y - origin.y)
+	var ez := mini(CHUNK, size.z - origin.z)
+	var doff: Array[int] = [1, -1, P, -P, PP, -PP]
+	var uoff: Array[int] = []
+	var voff: Array[int] = []
+	for f in 6:
+		var u: Vector3i = TANGENTS[f][0]
+		var v: Vector3i = TANGENTS[f][1]
+		uoff.append(u.x + u.y * P + u.z * PP)
+		voff.append(v.x + v.y * P + v.z * PP)
+	const CS := [Vector2i(-1, -1), Vector2i(1, -1), Vector2i(1, 1), Vector2i(-1, 1)]
+	const CUV := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+	var slope_lists := [[], [], [], [], []]
+	for lz in range(1, ez + 1):
+		for ly in range(1, ey + 1):
+			for lx in range(1, ex + 1):
+				var i := lx + P * ly + PP * lz
+				var t: int = pb[i]
 				if t == Blocks.AIR:
 					continue
-				var p := Vector3i(x, y, z)
+				var p := Vector3i(origin.x + lx - 1, origin.y + ly - 1, origin.z + lz - 1)
 				var r: int = Blocks.render[t]
-				var sh: int = shapes[x + sx * y + sxy * z]
-				if sh != 0:
-					_mesh_shape(p, t, sh, verts[r], norms[r], cols[r], uvs[r], uv2s[r], faces)
+				if psh[i] != 0:
+					var sv := []
+					var sn := []
+					var sc := []
+					var su := []
+					var s2 := []
+					_mesh_shape(p, t, psh[i], sv, sn, sc, su, s2, faces)
+					for k in sv.size():
+						if r == 1:
+							v1.append(sv[k]); n1.append(sn[k]); c1.append(sc[k]); u1.append(su[k]); w1.append(s2[k])
+						elif r == 3:
+							v3.append(sv[k]); n3.append(sn[k]); c3.append(sc[k]); u3.append(su[k]); w3.append(s2[k])
 					continue
 				var base: Color = _lin_colors[t]
-				var h := ((x * 73856093) ^ (y * 19349663) ^ (z * 83492791)) & 255
+				var h := ((p.x * 73856093) ^ (p.y * 19349663) ^ (p.z * 83492791)) & 255
 				var vary := 0.97 + (h / 255.0) * 0.06
+				var cat: int = _cat[t]
+				var is_glass := r == Blocks.Render.GLASS
 				for f in 6:
-					var n := DIRS[f]
-					var nt := get_block(p + n)
-					if not _face_visible(t, nt) and get_shape(p + n) == 0:
+					var ni := i + doff[f]
+					var nt: int = pb[ni]
+					var visible := nt == Blocks.AIR or (Blocks.render[nt] == Blocks.Render.GLASS and nt != t) or psh[ni] != 0
+					if not visible:
 						continue
+					var uo: int = uoff[f]
+					var vo: int = voff[f]
+					var n := DIRS[f]
 					var u: Vector3i = TANGENTS[f][0]
 					var v: Vector3i = TANGENTS[f][1]
 					var center := (Vector3(p) + Vector3(0.5, 0.5, 0.5) + Vector3(n) * 0.5) * VOXEL
+					# 边缘是否“露在外面”：同一平面继续延伸的边不做倒角 → 平地上看不到方格
+					var mask := 0
+					var edge_offs: Array[int] = [-uo, uo, -vo, vo]
+					for e in 4:
+						var nb: int = pb[i + edge_offs[e]]
+						var cont := nb != Blocks.AIR and psh[i + edge_offs[e]] == 0 and _occ[pb[i + edge_offs[e] + doff[f]]] == 0 and (_occ[nb] == 1 or nb == t)
+						if cat == 1 and nb != t:
+							cont = false
+						if not cont:
+							mask |= 1 << e
 					var q: Array[Vector3] = []
 					var ao: Array[float] = []
-					for cs in corner_sign:
+					for k in 4:
+						var cs: Vector2i = CS[k]
 						q.append(center + (Vector3(u) * cs.x + Vector3(v) * cs.y) * (0.5 * VOXEL))
-						var s1 := _is_occluder(get_block(p + n + u * cs.x))
-						var s2 := _is_occluder(get_block(p + n + v * cs.y))
-						var cc := _is_occluder(get_block(p + n + u * cs.x + v * cs.y))
-						var occ := 3 if (s1 and s2) else int(s1) + int(s2) + int(cc)
+						var o1: int = _occ[pb[ni + uo * cs.x]]
+						var o2: int = _occ[pb[ni + vo * cs.y]]
+						var oc: int = _occ[pb[ni + uo * cs.x + vo * cs.y]]
+						var occ := 3 if (o1 == 1 and o2 == 1) else o1 + o2 + oc
 						ao.append(AO_CURVE[occ])
 					var idx: Array
 					var flip := ao[0] + ao[2] < ao[1] + ao[3]
@@ -493,19 +708,17 @@ func _build_chunk(c: Vector3i) -> void:
 					else:
 						idx = [0, 1, 2, 0, 2, 3] if not flip else [0, 1, 3, 1, 2, 3]
 					var shade := FACE_SHADE[f] * vary
-					var tuv2 := Vector2(t / 255.0, 0.0)
+					var tuv2 := Vector2(t / 255.0, (mask + cat * 16) / 255.0)
 					var nf := Vector3(n)
 					for k in idx:
-						verts[r].append(q[k])
-						norms[r].append(nf)
-						# rgb = 方块本色（线性），a = 光照系数（面朝向 × AO），由着色器相乘
-						cols[r].append(Color(base.r, base.g, base.b, ao[k] * shade))
-						uvs[r].append(CORNER_UV[k])
-						uv2s[r].append(tuv2)
-						if r == Blocks.Render.GLASS:
-							glass_faces.append(q[k])
+						var col := Color(base.r, base.g, base.b, ao[k] * shade)
+						if r == 1:
+							v1.append(q[k]); n1.append(nf); c1.append(col); u1.append(CUV[k]); w1.append(tuv2); faces.append(q[k])
+						elif r == 2:
+							v2.append(q[k]); n2.append(nf); c2.append(col); u2.append(CUV[k]); w2.append(tuv2); glass_faces.append(q[k])
 						else:
-							faces.append(q[k])
+							v3.append(q[k]); n3.append(nf); c3.append(col); u3.append(CUV[k]); w3.append(tuv2); faces.append(q[k])
+	_bv = [null, [v1, n1, c1, u1, w1], [v2, n2, c2, u2, w2], [v3, n3, c3, u3, w3]]
 
 	var node: Dictionary = _chunks.get(c, {})
 	if node.is_empty():
@@ -532,15 +745,16 @@ func _build_chunk(c: Vector3i) -> void:
 
 	var mesh := ArrayMesh.new()
 	for rm in [Blocks.Render.OPAQUE, Blocks.Render.GLASS, Blocks.Render.GLOW]:
-		if (verts[rm] as Array).is_empty():
+		var set: Array = _bv[rm]
+		if (set[0] as PackedVector3Array).is_empty():
 			continue
 		var arr := []
 		arr.resize(Mesh.ARRAY_MAX)
-		arr[Mesh.ARRAY_VERTEX] = PackedVector3Array(verts[rm])
-		arr[Mesh.ARRAY_NORMAL] = PackedVector3Array(norms[rm])
-		arr[Mesh.ARRAY_COLOR] = PackedColorArray(cols[rm])
-		arr[Mesh.ARRAY_TEX_UV] = PackedVector2Array(uvs[rm])
-		arr[Mesh.ARRAY_TEX_UV2] = PackedVector2Array(uv2s[rm])
+		arr[Mesh.ARRAY_VERTEX] = set[0]
+		arr[Mesh.ARRAY_NORMAL] = set[1]
+		arr[Mesh.ARRAY_COLOR] = set[2]
+		arr[Mesh.ARRAY_TEX_UV] = set[3]
+		arr[Mesh.ARRAY_TEX_UV2] = set[4]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, _materials[rm])
 	var mi2: MeshInstance3D = node["mesh"]

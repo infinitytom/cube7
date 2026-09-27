@@ -4,6 +4,7 @@ render_mode cull_back;
 
 void fragment() {
 	ALBEDO = voxel_albedo(COLOR.rgb, COLOR.a, UV);
-	ROUGHNESS = 0.82;
+	NORMAL = normalize((VIEW_MATRIX * vec4(voxel_round_normal(UV), 0.0)).xyz);
+	ROUGHNESS = 0.7;
 	SPECULAR = 0.25;
 }

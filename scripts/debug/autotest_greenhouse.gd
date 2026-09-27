@@ -63,6 +63,19 @@ func _run() -> void:
 	check(P.grounded, "出生点：球停在坑底")
 	check(GameState.unlocked_forms == [true, false, false], "开局只有滚球形态")
 	check(enemy_count == 2, "关卡里放了 %d 只锈块兽" % enemy_count)
+	check(L.seeds.size() == 3, "关卡里放了 %d 个种子方块" % L.seeds.size())
+	for id in L.seeds:
+		print("    种子方块 ", id, " 位于体素 ", W.world_to_voxel(L.seeds[id].global_position))
+	# 冲撞打开第一个种子方块，救出噗噗
+	var sc: Node3D = L.seeds["gh_s1"]
+	var sv := W.world_to_voxel(sc.global_position)
+	await tp(sv + Vector3i(-4, 0, 0))
+	P.debug_input = Vector2(0, -1)
+	await wait(0.2)
+	P.debug_ability_pressed = true
+	await wait(1.0)
+	P.debug_input = Vector2.ZERO
+	check(GameState.seeds == 1, "冲撞打开种子方块，救出噗噗（%d）" % GameState.seeds)
 	P.request_form(MorphBall.DRILL)
 	check(P.form == MorphBall.BALL, "未解锁的钻头无法切换")
 

@@ -38,7 +38,7 @@ func new_game(i: int) -> void:
 	data = {
 		"version": VERSION, "area": "greenhouse", "saved_at": Time.get_unix_time_from_system(),
 		"play_time": 0.0, "checkpoint": null, "checkpoint_form": -1,
-		"forms": [], "coins": 0, "fragments": [], "flags": {}, "intro_seen": false,
+		"forms": [], "coins": 0, "fragments": [], "seeds": [], "flags": {}, "intro_seen": false,
 	}
 	_play_start = Time.get_ticks_msec() / 1000.0
 	write()

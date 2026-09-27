@@ -46,6 +46,12 @@ func _draw() -> void:
 			var dia := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r * 0.7, 0), c + Vector2(0, r), c + Vector2(-r * 0.7, 0)])
 			draw_colored_polygon(dia, color)
 			draw_line(c + Vector2(0, -r), c + Vector2(0, r), color.lightened(0.5), 1.5)
+		"pupu":
+			# 噗噗：圆脑袋 + 两只小眼睛
+			draw_circle(c + Vector2(0, r * 0.1), r * 0.9, color)
+			draw_circle(c + Vector2(-r * 0.32, 0), r * 0.14, Color("1b1f3b"))
+			draw_circle(c + Vector2(r * 0.32, 0), r * 0.14, Color("1b1f3b"))
+			draw_arc(c + Vector2(0, r * 0.25), r * 0.22, 0.3, PI - 0.3, 8, Color("1b1f3b"), 1.5, true)
 		"objective":
 			var pulse := 0.85 + 0.15 * sin(t * 3.0)
 			draw_arc(c, r * pulse, 0, TAU, 32, color, 2.5, true)

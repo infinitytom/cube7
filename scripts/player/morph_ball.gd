@@ -30,7 +30,7 @@ const FORMS: Array[Dictionary] = [
 
 const IMPACT_MIN := 1.8
 const DASH_SPEED := 11.5
-const GRAB_RANGE := 2.2
+const GRAB_RANGE := 2.8
 
 var form: int = BALL
 var form_locked := false
@@ -414,7 +414,7 @@ func _pound_land() -> void:
 	Sfx.play("break_hard", global_position, -2.0, 0.1)
 	_ring_fx(FORMS[DRILL].color, POUND_RADIUS)
 	if world:
-		world.break_sphere(global_position + Vector3.DOWN * 0.6, 1.0, "impact", 10.0)
+		world.break_sphere(global_position + Vector3.DOWN * 0.6, 1.0, "impact", 10.0, Vector3.DOWN)
 	for e in get_tree().get_nodes_in_group("enemy"):
 		var d := (e as Node3D).global_position.distance_to(global_position)
 		if d < POUND_RADIUS:
@@ -428,6 +428,9 @@ func _wave() -> void:
 		var d := (e as Node3D).global_position.distance_to(global_position)
 		if d < WAVE_RADIUS:
 			e.call("on_wave", global_position)
+	for sc in get_tree().get_nodes_in_group("seed_cube"):
+		if (sc as Node3D).global_position.distance_to(global_position) < WAVE_RADIUS:
+			sc.call("on_wave", global_position)
 	for n in get_tree().get_nodes_in_group("usable_item"):
 		var rb := n as RigidBody3D
 		if rb and rb.global_position.distance_to(global_position) < WAVE_RADIUS and not rb.get("held"):
@@ -492,6 +495,7 @@ func _drill(dir: Vector3) -> void:
 				pts.append(global_position + _move_dir * 0.75 + Vector3.UP * oy + side * os)
 	var down := dir.length() < 0.15
 	var broke := false
+	var cells: Array[Vector3i] = []
 	for p in pts:
 		var v := world.world_to_voxel(p)
 		# 往下只能钻松土/砂：普通地面钻不下去，避免把自己困在坑里
@@ -499,6 +503,14 @@ func _drill(dir: Vector3) -> void:
 			continue
 		if world.try_break(v, "drill", 1.0):
 			broke = true
+			cells.append(v)
+			# 隧道壁随机多崩掉一块，钻出来的洞不会像刀切一样整齐
+			if not down and randf() < 0.18:
+				var side := Vector3i([Vector3i.UP, Vector3i.LEFT, Vector3i.RIGHT, Vector3i.FORWARD, Vector3i.BACK][randi() % 5])
+				if world.try_break(v + side, "drill", 1.0, false):
+					cells.append(v + side)
+	if not cells.is_empty():
+		world.detach_floating(cells)
 	if broke:
 		GameState.shake.emit(0.06)
 		Sfx.play("drill", global_position, -6.0, 0.1)
@@ -513,7 +525,7 @@ func _handle_impacts() -> void:
 		var n: Vector3 = imp.normal
 		var radius := clampf(0.45 + speed * 0.065, 0.5, 1.3)
 		var center: Vector3 = imp.point - n * 0.25
-		var count := world.break_sphere(center, radius, "impact", speed)
+		var count := world.break_sphere(center, radius, "impact", speed, imp.vel)
 		if count == 0 and speed > 4.0:
 			Sfx.play("thud", global_position, linear_to_db(clampf(speed / 12.0, 0.2, 1.0)), 0.1)
 		if count >= 2:
@@ -547,8 +559,9 @@ func toggle_grab() -> void:
 		_release_held(throw_dir * 3.5 + Vector3.UP * 3.0 + linear_velocity * 0.4)
 		Sfx.play("throw", global_position, -4.0)
 		return
+	# 牵引光束：4.5 米内最近的物件会被“吸”过来，不用精确贴上去
 	var best: Node3D = null
-	var best_d := GRAB_RANGE
+	var best_d := GRAB_RANGE + 1.7
 	for n in get_tree().get_nodes_in_group("usable_item"):
 		var d := (n as Node3D).global_position.distance_to(global_position)
 		if d < best_d:
@@ -558,6 +571,18 @@ func toggle_grab() -> void:
 		_held = best
 		best.call("set_held", true)
 		Sfx.play("grab", global_position, -4.0)
+		set_mood("happy", 0.6)
+		var from := best.global_position
+		var tw := create_tween()
+		tw.tween_method(func(k: float) -> void:
+			if is_instance_valid(best) and _held == best:
+				best.global_position = from.lerp(global_position + Vector3.UP * 0.95, k), 0.0, 1.0, 0.18)
+	else:
+		Sfx.play("pix_curious", Vector3.INF, -10.0, 0.05)
+		var now := Time.get_ticks_msec() / 1000.0
+		if now - _no_grab_said > 30.0:
+			_no_grab_said = now
+			GameState.say("附近没有能抓的东西。只有带发光描边的物件可以抓起来。")
 
 func _release_held(vel: Vector3) -> void:
 	if _held and is_instance_valid(_held):
@@ -566,6 +591,7 @@ func _release_held(vel: Vector3) -> void:
 	_held = null
 
 var _hidden_by := ""
+var _no_grab_said := -100.0
 
 func set_visual_hidden(v: bool) -> void:
 	_hidden_by = "camera" if v else ""

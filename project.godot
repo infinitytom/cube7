@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="立方-7 Cube-7"
+config/name="方舟星球 Voxel Ark"
 config/description="体素箱庭解谜冒险原型"
 run/main_scene="res://scenes/title.tscn"
 config/features=PackedStringArray("4.7", "Double Precision", "Forward Plus")

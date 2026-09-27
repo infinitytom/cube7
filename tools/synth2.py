@@ -309,3 +309,17 @@ def make_combat():
 
 if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "combat":
     make_combat()
+
+
+def voice_pupu():
+    """噗噗的声音：更高、更圆的小音节，带一点上扬"""
+    n = int(0.075 * SR)
+    t = np.arange(n) / SR
+    f0 = np.interp(t, [0, 0.075], [560, 700])
+    ph = 2 * np.pi * np.cumsum(f0) / SR
+    src = sum(np.sin(ph * k) / k for k in range(1, 12))
+    x = bp_fast(src, 700, 1300) + bp_fast(src, 2200, 3200) * 0.5
+    return x * env(n, 0.005, 0.02, 0.8, 0.025)
+
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "pupu":
+    S.sfx_out("voice_pupu", voice_pupu())

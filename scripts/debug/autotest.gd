@@ -105,8 +105,19 @@ func _run() -> void:
 	if L.crystal and is_instance_valid(L.crystal):
 		await tp(W.world_to_voxel(L.crystal.global_position) + Vector3i(-2, 0, 0))
 		await wait(0.3)
-		P.toggle_grab()
-		check(P.is_holding(), "抓起晶块")
+		# 用真实的按键事件（键盘 E）来抓，确保输入链路没有被别的节点吞掉
+		var ev := InputEventKey.new()
+		ev.physical_keycode = KEY_E
+		ev.keycode = KEY_E
+		ev.pressed = true
+		Input.parse_input_event(ev)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var up := ev.duplicate() as InputEventKey
+		up.pressed = false
+		Input.parse_input_event(up)
+		await get_tree().process_frame
+		check(P.is_holding(), "按 E 键抓起晶块（真实输入事件）")
 		# 抱着晶块滚到缺口前 1.5 米处，向前轻抛
 		P.teleport(W.voxel_top(Vector3i(65, 3, 31)) + Vector3.UP * 0.5)
 		await wait(0.3)
@@ -184,6 +195,7 @@ func _run() -> void:
 	check(P.global_position.y > 1.5 and P.global_position.x > 45.0, "掉落后回到轨道检查点 (%.1f, %.1f, %.1f)" % [P.global_position.x, P.global_position.y, P.global_position.z])
 
 	await _enemy_tests()
+	await _chunk_test()
 
 	print("===== 金币 %d · 能源 %d · 护盾 %d · 破坏方块 %d =====" % [GameState.coins, GameState.energy, GameState.shield, GameState.blocks_broken])
 	if fails.is_empty():
@@ -261,3 +273,25 @@ func _enemy_tests() -> void:
 	check(hit, "锈块兽发现 PIX 后蓄力冲锋，撞到扣护盾")
 	if is_instance_valid(e):
 		e.queue_free()
+
+
+func _chunk_test() -> void:
+	print("  —— 体素碎块 ——")
+	# 地面上立一根土柱，顶上横着伸出两格；打断柱子后，悬空的两格应整块掉落
+	W.fill_box(Vector3i(25, 4, 45), Vector3i(25, 5, 45), Blocks.DIRT)
+	W.fill_box(Vector3i(26, 5, 45), Vector3i(27, 5, 45), Blocks.DIRT)
+	await wait(0.2)
+	W.try_break(Vector3i(25, 5, 45), "drill", 1.0)
+	W.detach_floating([Vector3i(25, 5, 45)] as Array[Vector3i])
+	var chunks := W.find_children("*", "VoxelChunk", false, false)
+	var n := 0
+	for c in W.get_children():
+		if c is VoxelChunk:
+			n += 1
+	check(n >= 1 and W.get_block(Vector3i(26, 5, 45)) == Blocks.AIR, "打断支撑后，悬空的方块整块掉落（碎块 %d 个）" % n)
+	await wait(2.0)
+	var left := 0
+	for c in W.get_children():
+		if c is VoxelChunk:
+			left += 1
+	check(left == 0, "碎块落地后碎掉消失")

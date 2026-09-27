@@ -11,6 +11,7 @@ signal device_changed(kind: String)
 signal level_cleared
 signal form_unlocked(index: int)
 signal fragments_changed(value: int)
+signal seeds_changed(value: int)
 signal objective_changed(index: int, text: String, pos: Vector3)
 @warning_ignore("unused_signal")
 signal shake(amount: float)
@@ -28,6 +29,8 @@ var blocks_broken := 0:
 			say("你是拆迁队吗？……好吧，拆得还挺专业。")
 var player: Node3D
 var camera: Node3D
+var seeds := 0                      ## 本章救出的噗噗（打开的种子方块）
+var seeds_total := 3
 var checkpoint := Vector3(4.75, 3.5, 16.0)
 var checkpoint_form := -1          ## 复活时强制的形态（-1 = 不改）
 var checkpoint_locks_form := false
@@ -59,6 +62,7 @@ func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count
 	allow_jump = jump
 	kill_y = kill
 	fragments = 0
+	seeds = 0
 	objective_index = -1
 	objective_text = ""
 	objective_pos = Vector3.INF
@@ -76,6 +80,23 @@ func unlock_form(i: int) -> void:
 		return
 	unlocked_forms[i] = true
 	form_unlocked.emit(i)
+
+## 打开种子方块、救出一只噗噗（存档里记下 id）
+func add_seed(id: String) -> void:
+	seeds += 1
+	seeds_changed.emit(seeds)
+	if id != "" and not SaveGame.data.is_empty():
+		var arr: Array = SaveGame.data.get("seeds", [])
+		if not id in arr:
+			arr.append(id)
+		SaveGame.data["seeds"] = arr
+		SaveGame.write()
+	if seeds == 1:
+		get_tree().create_timer(5.0).timeout.connect(func() -> void:
+			say("种子方块里封存的居民……还活着。太好了。每一座浮岛上都有，把他们都找回来吧。"))
+	elif seeds == seeds_total:
+		get_tree().create_timer(5.0).timeout.connect(func() -> void:
+			say("这片浮岛上的噗噗全部救出来了！避难所那边……热闹得有点吵。"))
 
 func add_fragment(log_text: String) -> void:
 	fragments += 1

@@ -64,6 +64,8 @@ func _check(parent: Node, title: String, key: String) -> void:
 	parent.add_child(c)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if visible and (event.is_action_pressed("ui_cancel") or event.is_action_pressed("grab")):
+	# 注意用 is_visible_in_tree：面板挂在隐藏的暂停菜单下时自身 visible 仍为 true，
+	# 以前这里会吞掉游戏里所有的“抓取”按键
+	if is_visible_in_tree() and event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		closed.emit()

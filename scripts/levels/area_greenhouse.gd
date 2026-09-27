@@ -465,6 +465,24 @@ func _enemy_near(x: int, z: int) -> void:
 					enemies.append(e)
 					return
 
+var seeds: Dictionary = {}
+
+## 在 (x, z) 附近找一块平地放种子方块
+func _seed(id: String, x: int, z: int, line: int) -> void:
+	for r in range(0, 6):
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var h := h_at(x + dx, z + dz)
+				if h < 0 or world.get_block(Vector3i(x + dx, h, z + dz)) != Blocks.AIR:
+					continue
+				var sc := SeedCube.new()
+				sc.seed_id = id
+				sc.line_index = line
+				add_child(sc)
+				sc.global_position = world.voxel_top(Vector3i(x + dx, h - 1, z + dz))
+				seeds[id] = sc
+				return
+
 func _logic() -> void:
 	var marker := ObjectiveMarker.new()
 	marker.name = "ObjectiveMarker"
@@ -484,8 +502,12 @@ func _logic() -> void:
 	_objective(2, "想办法越过深沟——看看那座砂塔", Vector3i(51, G + 2, 70), Vector3i(42, G, 62), Vector3i(51, G + 4, 80))
 	_objective(3, "登上高台，进入玻璃温室", Vector3i(64, G + 6, 49), Vector3i(62, G, 64), Vector3i(68, G + 4, 76))
 	_objective(4, "拿到温室中央的能量核心", DOME_C + Vector3i(0, 1, 0), Vector3i(55, G + 6, 27), Vector3i(73, G + 12, 45))
-	_objective(6, "找到通往中枢塔的路（试试往下钻）", Vector3i(91, G + 6, 51), Vector3i(83, G + 6, 50), Vector3i(86, G + 9, 54))
-	_objective(7, "为中枢塔找一块能量晶块（西边的岩丘）", Vector3i(92, G + 5, 21), Vector3i(90, G + 2, 30), Vector3i(100, G + 6, 42))
+	_objective(6, "找到通往重构塔的路（试试往下钻）", Vector3i(91, G + 6, 51), Vector3i(83, G + 6, 50), Vector3i(86, G + 9, 54))
+	_objective(7, "为重构塔找一块能量晶块（西边的岩丘）", Vector3i(92, G + 5, 21), Vector3i(90, G + 2, 30), Vector3i(100, G + 6, 42))
+	# 种子方块（被封存的噗噗）：一个在显眼处教学，两个藏在需要探索的地方
+	_seed("gh_s1", 30, 80, 0)
+	_seed("gh_s2", 72, 30, 1)
+	_seed("gh_s3", 104, 44, 2)
 	# A
 	zone(Checkpoint, SPAWN + Vector3i(-2, 0, -2), SPAWN + Vector3i(2, 3, 2))
 	talk(SPAWN + Vector3i(-3, 0, -3), SPAWN + Vector3i(3, 5, 3), [
@@ -495,7 +517,7 @@ func _logic() -> void:
 	talk(Vector3i(21, G - 2, 70), Vector3i(26, G + 3, 78), [
 		"坑口被木箱堵住了。别减速，直接撞上去——速度就是力量。",
 	])
-	_fragment("gh_1", Vector3i(12, G - 2, 79), {"log_text": "艾拉博士，第 12 天：引擎能把一块岩石变成可以随意拆装的方块。整颗星球都能这样就好了。"})
+	_fragment("gh_1", Vector3i(12, G - 2, 79), {"log_text": "艾拉·林，研究日志 #12：方舟引擎第一次成功——一块岩石被拆成方块，又被原样拼了回来。它摸起来还是暖的。"})
 	coin_line(Vector3i(20, G - 2, 74), Vector3i(24, G - 1, 74), 3)
 	coin_line(Vector3i(29, G, 74), Vector3i(44, G, 74), 6)
 	coin_line(Vector3i(33, G, 64), Vector3i(33, G, 67), 2)
@@ -508,7 +530,7 @@ func _logic() -> void:
 	coin_line(Vector3i(45, G, 70), Vector3i(45, G, 72), 2)
 	zone(Checkpoint, Vector3i(63, G, 71), Vector3i(67, G + 3, 75))
 	talk(Vector3i(62, G, 66), Vector3i(68, G + 4, 76), [
-		"漂亮！砂子把沟填平了。坡道上去就是温室——整座站点的心脏。",
+		"漂亮！砂子把沟填平了。坡道上去就是温室——艾拉博士以前的研究所。",
 	])
 	coin_line(Vector3i(64, G + 1, 68), Vector3i(64, G + 5, 60), 5)
 	# D
@@ -520,7 +542,7 @@ func _logic() -> void:
 		"form": MorphBall.DRILL,
 		"unlock_text": "钻头形态解锁！按住{ability}往前钻，静止时往下钻。用{form}或{form_direct}随时切换形态。",
 	})
-	_fragment("gh_2", DOME_C + Vector3i(5, 0, 5), {"log_text": "艾拉博士，第 40 天：星核的读数越来越不稳定。他们说我太紧张了。"})
+	_fragment("gh_2", DOME_C + Vector3i(5, 0, 5), {"log_text": "艾拉·林，研究日志 #231：日冕潮的预测值又上调了。议会还在讨论撤离预算。我已经没有时间等他们了。"})
 	talk(Vector3i(68, G + 6, 50), Vector3i(75, G + 10, 54), [
 		"通往东边的小桥被泥土堵死了。现在你有钻头了——挖过去！",
 	])
@@ -529,11 +551,11 @@ func _logic() -> void:
 	talk(Vector3i(87, G + 6, 48), Vector3i(96, G + 10, 56), [
 		"这片深色的松土……下面好像是空的。停下来按住{ability}往下钻试试。普通地面是钻不下去的，只有松土可以。",
 	])
-	_fragment("gh_3", Vector3i(89, G + 2, 53), {"log_text": "艾拉博士，最后一天：我启动了引擎。对不起，这是唯一能保住所有人的办法。"})
+	_fragment("gh_3", Vector3i(89, G + 2, 53), {"log_text": "艾拉·林，最后一条：引擎已经启动。对不起，没来得及问你们愿不愿意。等你们醒来的时候，我会在这里。"})
 	# F
 	zone(Checkpoint, Vector3i(92, G + 2, 36), Vector3i(97, G + 5, 40))
 	talk(Vector3i(90, G + 2, 30), Vector3i(100, G + 6, 42), [
-		"中枢塔断电了。塔基前那个发光的凹槽需要一块能量晶块。",
+		"这就是第一座重构塔——断电了。塔基前那个发光的凹槽需要一块能量晶块。",
 		"西边那座岩丘里有紫色的晶洞——钻开它，用{grab}抓起晶块，再按{grab}扔进凹槽。",
 	])
 	socket = ItemSocket.new()
@@ -562,6 +584,11 @@ func apply_save(d: Dictionary) -> void:
 			fragments[id].queue_free()
 			GameState.fragments += 1
 	GameState.fragments_changed.emit(GameState.fragments)
+	for id in (d.get("seeds", []) as Array):
+		if seeds.has(id) and is_instance_valid(seeds[id]):
+			seeds[id].queue_free()
+			GameState.seeds += 1
+	GameState.seeds_changed.emit(GameState.seeds)
 	if GameState.unlocked_forms[MorphBall.DRILL] and is_instance_valid(form_core):
 		form_core.queue_free()
 		Music.set_default("bright")
@@ -581,15 +608,16 @@ func intro_shots() -> Array:
 	var V := VoxelWorld.VOXEL
 	var c := Vector3(64, G, 50) * V
 	return [
-		{"black": true, "from": Vector3(-40, 40, 140) * V, "to": Vector3(-20, 38, 130) * V, "look": c, "dur": 4.5,
-			"lines": [["", "星历 3127 年。"], ["", "殖民星球「立方-7」的最后一条通讯，停在三年前。"]]},
-		{"from": Vector3(-30, 60, 150) * V, "to": Vector3(20, 45, 140) * V, "look": c, "dur": 6.0,
-			"lines": [["", "那一天，整颗星球像被某种力量拆开、又重新拼起——"], ["", "变成了漂浮在云海之上的方块。"]]},
-		{"from": Vector3(40, 34, 70) * V, "to": Vector3(52, 32, 62) * V, "look_from": Vector3(64, 28, 36) * V, "look_to": Vector3(100, 30, 24) * V, "dur": 6.0,
-			"lines": [["", "研究站的灯一盏接一盏熄灭。没有人知道科学家们去了哪里。"], ["", "直到今天。"]]},
-		{"from": Vector3(40, 30, 110) * V, "to": Vector3(32, 26, 100) * V, "look_from": Vector3(10, 70, 60) * V, "look_to": Vector3(15, 18, 74) * V, "dur": 3.2, "event": "crash"},
-		{"from": Vector3(31, 28, 90) * V, "to": Vector3(26, 25.5, 85) * V, "look": Vector3(16, 18.5, 74) * V, "dur": 7.5,
-			"lines": [["NOVA", "……信号确认。维护单元 PIX，启动。"], ["NOVA", "我是站点 AI「NOVA」。三年了……终于有人来了。"], ["NOVA", "先离开这个坑。温室和中枢塔都在东边——我得弄清楚，这里到底发生了什么。"]]},
+		{"black": true, "from": Vector3(-40, 40, 140) * V, "to": Vector3(-20, 38, 130) * V, "look": c, "dur": 6.0,
+			"lines": [["", "星历 3124 年，殖民星球「伊甸-7」。"], ["", "恒星爆发了百年一遇的日冕潮。撤离，已经来不及了。"]]},
+		{"from": Vector3(-30, 60, 150) * V, "to": Vector3(20, 45, 140) * V, "look": c, "dur": 8.0,
+			"lines": [["", "最后一小时，艾拉·林博士启动了「方舟引擎」。"], ["", "陆地、森林、城市，还有一万两千个居民——整颗星球被拆成了方块，"], ["", "托上云海，躲过了那场风暴。"]]},
+		{"from": Vector3(40, 34, 70) * V, "to": Vector3(52, 32, 62) * V, "look_from": Vector3(64, 28, 36) * V, "look_to": Vector3(100, 30, 24) * V, "dur": 7.0,
+			"lines": [["", "按照计划，三年后五座重构塔会一同点亮，把星球重新拼回来。"], ["", "三年过去了。一座塔也没有亮。"]]},
+		{"from": Vector3(40, 30, 110) * V, "to": Vector3(32, 26, 100) * V, "look_from": Vector3(10, 70, 60) * V, "look_to": Vector3(15, 18, 74) * V, "dur": 3.4, "event": "crash",
+			"lines": [["", "直到今天——"]]},
+		{"from": Vector3(31, 28, 90) * V, "to": Vector3(26, 25.5, 85) * V, "look": Vector3(16, 18.5, 74) * V, "dur": 10.0,
+			"lines": [["NOVA", "……信号确认。维护单元 PIX，启动。"], ["NOVA", "我是 NOVA。你是「摇篮号」上最后一台维护球——三年了，终于有人来了。"], ["NOVA", "东边那座熄灭的塔，就是第一座重构塔。先离开这个坑。"]]},
 	]
 
 ## 飞船坠落特效
@@ -661,7 +689,7 @@ func _on_item_dropped(item_id: String, pos: Vector3) -> void:
 		crystal.home = crystal.global_position
 		crystal.linear_velocity = Vector3(randf_range(-1, 1), 3.0, randf_range(-1, 1))
 		GameState.say("能量晶块！它有发光描边——有用的东西会留在场上。按{grab}抓起来。")
-		GameState.set_objective(8, "把晶块扔进中枢塔前的发光凹槽", _v(SOCKET + Vector3i.UP))
+		GameState.set_objective(8, "把晶块扔进重构塔前的发光凹槽", _v(SOCKET + Vector3i.UP))
 
 ## 光桥：一格一格亮起来
 func _build_bridge(instant := false) -> void:
@@ -677,7 +705,7 @@ func _build_bridge(instant := false) -> void:
 		world.set_block(Vector3i(100, G + 2 + 13, 24), Blocks.RECEIVER_ON)
 		return
 	world.set_block(Vector3i(100, G + 2 + 13, 24), Blocks.RECEIVER_ON)
-	GameState.say("中枢塔重新上线！……光桥正在展开。终点浮岛上就是温室的能量核心。")
+	GameState.say("第一座重构塔……重新上线了！光桥正在展开——终点浮岛上是这片群岛的引擎节点。")
 	GameState.set_objective(9, "沿光桥登上终点浮岛", _v(Vector3i(104, G + 11, 81)))
 	SaveGame.set_flag("gh_bridge")
 	SaveGame.write()

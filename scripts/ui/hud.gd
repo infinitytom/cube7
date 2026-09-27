@@ -13,6 +13,7 @@ var _energy_bar: ProgressBar
 var _shields: Array[UIIcon] = []
 var _frag_row: HBoxContainer
 var _frag: Label
+var _seeds: Label
 var _obj_card: PanelContainer
 var _obj_text: Label
 var _nova: PanelContainer
@@ -30,6 +31,8 @@ var _nova_time := 0.0
 var _chars := 0.0
 var _last_char := 0
 var _pause: PauseMenu
+var _grab_hint := ""
+var _grab_t := 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -52,6 +55,7 @@ func _ready() -> void:
 	GameState.energy_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.shield_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.fragments_changed.connect(func(_v: int) -> void: _refresh_stats())
+	GameState.seeds_changed.connect(func(_v: int) -> void: _refresh_stats(true))
 	GameState.form_changed.connect(func(_i: int) -> void: _refresh_forms())
 	GameState.form_unlocked.connect(_on_form_unlocked)
 	GameState.device_changed.connect(func(_k: String) -> void: _refresh_prompts())
@@ -77,20 +81,21 @@ func _show_clear() -> void:
 	_root.add_child(dim)
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG_SOLID, UIKit.ACCENT2, 20, 36, 2))
-	UIKit.place(p, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-330, -215, 330, 215))
+	UIKit.place(p, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-330, -240, 330, 240))
 	_root.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 14)
 	p.add_child(v)
-	var small := UIKit.label("区域 1  ·  翠绿温室", 20, UIKit.ACCENT, true)
+	var small := UIKit.label("第一章  ·  翠绿温室群岛", 20, UIKit.ACCENT, true)
 	small.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(small)
-	var big := UIKit.label("区域完成", 52, UIKit.TEXT, true)
+	var big := UIKit.label("重构塔 1 / 5 点亮", 48, UIKit.TEXT, true)
 	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(big)
 	SaveGame.write()
 	var rows := [
 		["coin", UIKit.ACCENT2, "金币", str(GameState.coins)],
+		["pupu", Color("7dffc8"), "救出噗噗", "%d / 3" % GameState.seeds],
 		["fragment", Color("c89bff"), "记忆碎片", "%d / 3" % GameState.fragments],
 		["save", UIKit.ACCENT, "游戏时间", SaveGame.format_time(float(SaveGame.data.get("play_time", 0.0)))],
 	]
@@ -129,7 +134,7 @@ func _show_clear() -> void:
 	btns.add_child(stay)
 	btns.add_child(home)
 	home.grab_focus.call_deferred()
-	p.pivot_offset = Vector2(330, 215)
+	p.pivot_offset = Vector2(330, 240)
 	p.scale = Vector2(0.9, 0.9)
 	p.modulate.a = 0.0
 	var tw := create_tween().set_parallel()
@@ -177,6 +182,10 @@ func _build_stats() -> void:
 	_frag_row.add_child(UIIcon.make("fragment", Color("c9a6ff"), 22))
 	_frag = UIKit.label("0 / 3", 20, Color("d9c6ff"), true)
 	_frag_row.add_child(_frag)
+	_frag_row.add_child(UIKit.make_spacer(8))
+	_frag_row.add_child(UIIcon.make("pupu", Color("7dffc8"), 22))
+	_seeds = UIKit.label("0 / 3", 20, Color("b8ffe2"), true)
+	_frag_row.add_child(_seeds)
 	v.add_child(_frag_row)
 
 func _build_objective() -> void:
@@ -292,6 +301,7 @@ func _refresh_stats(pop := false) -> void:
 		_shields[i].queue_redraw()
 	_frag_row.visible = GameState.fragments_total > 0
 	_frag.text = "%d / %d" % [GameState.fragments, GameState.fragments_total]
+	_seeds.text = "%d / %d" % [GameState.seeds, GameState.seeds_total]
 
 func _refresh_forms() -> void:
 	var p := GameState.player as MorphBall
@@ -338,6 +348,10 @@ func _refresh_prompts() -> void:
 	_prompts.add_child(UIKit.prompt("boost", "加速", 24))
 	if GameState.allow_jump and p:
 		_prompts.add_child(UIKit.prompt("jump", MorphBall.FORMS[p.form].jump_name, 24))
+	if _grab_hint != "":
+		var gp := UIKit.prompt("grab", _grab_hint, 28)
+		gp.modulate = UIKit.ACCENT2
+		_prompts.add_child(gp)
 	_prompts.add_child(UIKit.prompt("pause", "菜单", 24))
 	if _form_badges.size() > 0:
 		pass
@@ -404,6 +418,23 @@ func _fmt_rich(t: String) -> String:
 # ================================================================ NOVA 对话
 
 func _process(delta: float) -> void:
+	# 靠近能抓的东西时，右下角亮出“抓取”，抱着东西时变成“投掷”
+	_grab_t -= delta
+	if _grab_t <= 0.0:
+		_grab_t = 0.2
+		var hint := ""
+		var p := GameState.player as MorphBall
+		if p:
+			if p.is_holding():
+				hint = "投掷"
+			else:
+				for n in get_tree().get_nodes_in_group("usable_item"):
+					if (n as Node3D).global_position.distance_to(p.global_position) < MorphBall.GRAB_RANGE:
+						hint = "抓取"
+						break
+		if hint != _grab_hint:
+			_grab_hint = hint
+			_refresh_prompts()
 	if _nova_time <= 0.0 and not _queue.is_empty():
 		var t := _fmt_rich(_queue[0])
 		_queue.remove_at(0)
