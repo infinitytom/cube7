@@ -8,6 +8,7 @@ const STATES := {
 	"puzzle": {"base": 1.0, "melody": 0.18, "bright": 0.0},
 	"bright": {"base": 1.0, "melody": 1.0, "bright": 1.0},
 	"quiet": {"base": 0.5, "melody": 0.0, "bright": 0.0},
+	"title": {"base": 1.0, "melody": 0.0, "bright": 0.0},
 }
 const LAYERS := ["base", "melody", "bright"]
 
@@ -40,14 +41,18 @@ func _ensure_bus(bus_name: String, db: float) -> void:
 ## 开始播放某区域的曲子（文件名前缀，例如 "gh"）
 func play_area(prefix: String) -> void:
 	for layer in LAYERS:
-		var s := load("res://audio/music/%s_%s.ogg" % [prefix, layer]) as AudioStreamOggVorbis
-		if s == null:
-			continue
-		s.loop = true
+		var path := "res://audio/music/%s_%s.ogg" % [prefix, layer]
 		var p: AudioStreamPlayer = _players[layer]
+		p.stream = null
+		if not ResourceLoader.exists(path):
+			continue
+		var s := load(path) as AudioStreamOggVorbis
+		s.loop = true
 		p.stream = s
 	for layer in LAYERS:
-		(_players[layer] as AudioStreamPlayer).play()
+		var pl := _players[layer] as AudioStreamPlayer
+		if pl.stream:
+			pl.play()
 
 func stop() -> void:
 	for layer in LAYERS:

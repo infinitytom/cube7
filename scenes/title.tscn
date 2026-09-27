@@ -1,10 +1,7 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene format=3]
 
-[ext_resource type="Script" path="res://scripts/game/main.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/meta/title.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/voxel/voxel_world.gd" id="2"]
-[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4"]
-[ext_resource type="Script" path="res://scripts/player/camera_rig.gd" id="5"]
-[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="6"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
 sky_top_color = Color(0.22, 0.52, 0.95, 1)
@@ -35,7 +32,7 @@ fog_sky_affect = 0.25
 
 [sub_resource type="CameraAttributesPractical" id="CamAttr_1"]
 
-[node name="Main" type="Node3D"]
+[node name="Title" type="Node3D"]
 script = ExtResource("1")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -52,12 +49,3 @@ directional_shadow_max_distance = 60.0
 
 [node name="VoxelWorld" type="Node3D" parent="."]
 script = ExtResource("2")
-
-[node name="Player" parent="." instance=ExtResource("4")]
-
-[node name="CameraRig" type="Node3D" parent="."]
-script = ExtResource("5")
-target_path = NodePath("../Player")
-
-[node name="Hud" type="CanvasLayer" parent="."]
-script = ExtResource("6")

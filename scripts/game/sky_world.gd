@@ -32,17 +32,17 @@ func _ready() -> void:
 	mat.rim_tint = 0.2
 	mat.emission_enabled = true
 	mat.emission = Color(0.9, 0.92, 1.0)
-	mat.emission_energy_multiplier = 0.35
+	mat.emission_energy_multiplier = 0.15
 	for i in cloud_count:
 		var puff := Node3D.new()
 		var ang := rng.randf() * TAU
-		var dist := rng.randf_range(45.0, 110.0)
-		puff.position = center + Vector3(cos(ang) * dist, rng.randf_range(-2.0, 22.0), sin(ang) * dist)
+		var dist := rng.randf_range(100.0, 170.0)
+		puff.position = center + Vector3(cos(ang) * dist, rng.randf_range(-4.0, 26.0), sin(ang) * dist)
 		var n := rng.randi_range(4, 7)
 		for k in n:
 			var mi := MeshInstance3D.new()
 			var s := SphereMesh.new()
-			var r := rng.randf_range(2.0, 4.5)
+			var r := rng.randf_range(3.5, 7.0)
 			s.radius = r
 			s.height = r * 1.6
 			s.radial_segments = 16
@@ -50,7 +50,7 @@ func _ready() -> void:
 			mi.mesh = s
 			mi.material_override = mat
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			mi.position = Vector3(k * 3.0 - n * 1.5 + rng.randf_range(-1, 1), rng.randf_range(-0.5, 1.5), rng.randf_range(-1.5, 1.5))
+			mi.position = Vector3(k * 5.0 - n * 2.5 + rng.randf_range(-1, 1), rng.randf_range(-0.5, 1.5), rng.randf_range(-1.5, 1.5))
 			puff.add_child(mi)
 		puff.rotation.y = rng.randf() * TAU
 		add_child(puff)
@@ -61,5 +61,5 @@ func _process(delta: float) -> void:
 	for i in _clouds.size():
 		var c := _clouds[i]
 		c.position.x += _speeds[i] * delta
-		if c.position.x > center.x + 130.0:
-			c.position.x = center.x - 130.0
+		if c.position.x > center.x + 190.0:
+			c.position.x = center.x - 190.0

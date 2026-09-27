@@ -5,6 +5,9 @@ const MIN_GAP := 0.045            ## 同一个音效的最短间隔（防止一�
 var _cache := {}
 var _last := {}
 
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS   # 暂停菜单里也要有音效
+
 func _stream(n: String) -> AudioStream:
 	if not _cache.has(n):
 		_cache[n] = load("res://audio/sfx/%s.ogg" % n)

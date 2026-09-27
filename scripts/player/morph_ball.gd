@@ -186,6 +186,7 @@ func apply_form(i: int, fx: bool) -> void:
 		tw.tween_property(_visual_root, "scale", Vector3.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		_burst(f.color)
 		Sfx.play("morph", Vector3.INF, -4.0)
+		Sfx.play("pix_morph", Vector3.INF, -9.0, 0.12)
 	GameState.form_changed.emit(i)
 
 # ---------------------------------------------------------------- 物理

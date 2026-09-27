@@ -1,9 +1,10 @@
 extends Node3D
-## 主场景：选关卡 → 搭建 → 放主角 → 启动。
-## 命令行参数：--level=test 进入机制测试房间；--autotest 自动测试（使用测试房间）；--shots=<目录> 截图
+## 游戏主场景：搭关卡 → 按进入方式（新游戏 / 继续 / 测试）放主角 → 开始。
+## 命令行：--level=test 测试房间；--autotest / --autotest=greenhouse 自动测试；--shots=<目录> 截图；--probe 调试
 
 @onready var world: VoxelWorld = $VoxelWorld
 @onready var player: MorphBall = $Player
+@onready var hud: Hud = $Hud
 var level: Node3D
 
 func _ready() -> void:
@@ -18,17 +19,69 @@ func _ready() -> void:
 	player.world = world
 	player.apply_form(MorphBall.BALL, false)
 	player.respawn_at(level.call("spawn_position"), -1, false)
+
 	if args.has("--autotest") or gh_test:
-		var t := Node.new()
-		t.set_script(load("res://scripts/debug/autotest_greenhouse.gd" if gh_test else "res://scripts/debug/autotest.gd"))
-		add_child(t)
-	elif args.has("--probe"):
-		var pr := Node.new()
-		pr.set_script(load("res://scripts/debug/probe.gd"))
-		add_child(pr)
-	elif args.any(func(a: String) -> bool: return a.begins_with("--shots")):
-		var s := Node.new()
-		s.set_script(load("res://scripts/debug/screenshots.gd"))
-		add_child(s)
-	elif DisplayServer.get_name() != "headless":
+		_attach("res://scripts/debug/autotest_greenhouse.gd" if gh_test else "res://scripts/debug/autotest.gd")
+		return
+	if args.any(func(a: String) -> bool: return a.begins_with("--shots")):
+		_attach("res://scripts/debug/screenshots.gd")
+		return
+	if args.has("--probe"):
+		_attach("res://scripts/debug/probe.gd")
+		return
+
+	match Flow.mode:
+		"continue":
+			_continue()
+		"new":
+			_new_game()
+		_:
+			_start_play()
+
+func _attach(path: String) -> void:
+	var n := Node.new()
+	n.set_script(load(path))
+	add_child(n)
+
+func _continue() -> void:
+	var d := SaveGame.data
+	if level.has_method("apply_save"):
+		level.call("apply_save", d)
+	var cp = d.get("checkpoint", null)
+	if cp is Array and cp.size() == 3:
+		var pos := Vector3(cp[0], cp[1], cp[2])
+		GameState.set_checkpoint(pos, int(d.get("checkpoint_form", -1)))
+		player.respawn_at(pos, -1, false)
+	_start_play(true)
+
+func _new_game() -> void:
+	if level.has_method("intro_shots") and not bool(SaveGame.data.get("intro_seen", false)):
+		hud.visible = false
+		player.freeze = true
+		var marker := level.get_node_or_null("ObjectiveMarker") as Node3D
+		if marker:
+			marker.visible = false
+		Music.set_override("quiet")
+		var cs := Cutscene.new()
+		cs.shots = level.call("intro_shots")
+		cs.event.connect(func(n: String) -> void:
+			if n == "crash" and level.has_method("crash_fx"):
+				level.call("crash_fx"))
+		add_child(cs)
+		cs.play()
+		await cs.finished
+		SaveGame.data["intro_seen"] = true
+		SaveGame.write()
+		player.freeze = false
+		hud.visible = true
+		if marker:
+			marker.visible = true
+		Music.set_override("")
+	_start_play()
+
+func _start_play(resumed := false) -> void:
+	if not resumed and level.has_method("spawn_yaw") and GameState.camera:
+		GameState.camera.yaw = level.call("spawn_yaw")
+	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	hud.show_area_title("区域 1", "翠绿温室", "继续旅程" if resumed else "")

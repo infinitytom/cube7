@@ -10,6 +10,7 @@ signal form_changed(index: int)
 signal device_changed(kind: String)
 signal form_unlocked(index: int)
 signal fragments_changed(value: int)
+signal objective_changed(index: int, text: String, pos: Vector3)
 @warning_ignore("unused_signal")
 signal shake(amount: float)
 
@@ -37,6 +38,18 @@ var fragments := 0
 var level_complete := false
 var fragments_total := 0
 var fragment_logs: PackedStringArray = []
+var objective_index := -1
+var objective_text := ""
+var objective_pos := Vector3.INF
+
+## 推进目标：只会往前推进（重复触发旧目标会被忽略）
+func set_objective(index: int, text: String, pos := Vector3.INF) -> void:
+	if index <= objective_index:
+		return
+	objective_index = index
+	objective_text = text
+	objective_pos = pos
+	objective_changed.emit(index, text, pos)
 
 ## 关卡开始时调用：重置收集进度
 func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count: int) -> void:
@@ -44,6 +57,9 @@ func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count
 	allow_jump = jump
 	kill_y = kill
 	fragments = 0
+	objective_index = -1
+	objective_text = ""
+	objective_pos = Vector3.INF
 	level_complete = false
 	fragments_total = fragment_count
 	fragment_logs = []
@@ -88,6 +104,7 @@ func damage(n := 1) -> void:
 
 func respawn() -> void:
 	Sfx.play("respawn", Vector3.INF, -4.0)
+	Sfx.play("pix_hurt", Vector3.INF, -8.0, 0.1)
 	if player and player.has_method("respawn_at"):
 		player.respawn_at(checkpoint, checkpoint_form, checkpoint_locks_form)
 

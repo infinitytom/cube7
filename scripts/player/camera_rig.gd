@@ -47,7 +47,16 @@ func _ready() -> void:
 	_cur_pitch = pitch
 	_cur_dist = distance
 	GameState.camera = self
-	GameState.shake.connect(func(a: float) -> void: _shake = maxf(_shake, a))
+	GameState.shake.connect(func(a: float) -> void:
+		if bool(Settings.get_v("shake")):
+			_shake = maxf(_shake, a))
+
+## 设置里的镜头灵敏度（0.25~2 倍）与上下反转
+func _sens() -> float:
+	return clampf(float(Settings.get_v("cam_sens")), 0.25, 2.0)
+
+func _inv() -> float:
+	return -1.0 if bool(Settings.get_v("invert_y")) else 1.0
 
 func _target_pos() -> Vector3:
 	# 用插值后的变换，避免 60Hz 物理 vs 高刷屏幕的抖动
@@ -55,8 +64,9 @@ func _target_pos() -> Vector3:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		yaw -= event.relative.x * mouse_sensitivity
-		pitch -= event.relative.y * mouse_sensitivity
+		var k := mouse_sensitivity * _sens()
+		yaw -= event.relative.x * k
+		pitch -= event.relative.y * k * _inv()
 	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not get_tree().paused:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event.is_action_pressed("view_toggle"):
@@ -82,8 +92,8 @@ func _dir_for(p: float) -> Vector3:
 
 func _process(delta: float) -> void:
 	var s := Input.get_vector("cam_left", "cam_right", "cam_up", "cam_down")
-	yaw -= s.x * stick_speed.x * delta
-	pitch = clampf(pitch - s.y * stick_speed.y * delta, -1.3, 0.35)
+	yaw -= s.x * stick_speed.x * delta * _sens()
+	pitch = clampf(pitch - s.y * stick_speed.y * delta * _sens() * _inv(), -1.3, 0.35)
 	if _target:
 		_pivot = _pivot.lerp(_target_pos(), 1.0 - exp(-14.0 * delta))
 

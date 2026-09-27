@@ -1,135 +1,312 @@
 class_name Hud
 extends CanvasLayer
-## 界面：左上收集品与护盾，顶部 NOVA 对话，底部形态栏与按键提示（随设备切换 PS5 / Xbox / 键鼠图标）
+## 游戏界面（统一风格见 UIKit）
+##   左上：金币 / 能源条 / 护盾 / 记忆碎片
+##   右上：当前目标卡片
+##   下方中间：NOVA 对话（全息头像 + 名牌 + 打字机 + 语音拟声）
+##   左下：形态栏（未解锁显示锁）  右下：只显示当前有用的按键提示
+##   中央：区域标题卡；右下角：自动保存提示
 
-const FONT_NAMES := ["Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", "sans-serif"]
-
+var _root: Control
 var _coins: Label
-var _energy: Label
-var _shield: Label
+var _energy_bar: ProgressBar
+var _shields: Array[UIIcon] = []
+var _frag_row: HBoxContainer
 var _frag: Label
-var _nova_panel: PanelContainer
-var _nova_label: Label
-var _form_slots: Array[Label] = []
-var _hint: Label
-var _form_hint: Label
-var _pause: PanelContainer
-var _pause_label: Label
+var _obj_card: PanelContainer
+var _obj_text: Label
+var _nova: PanelContainer
+var _nova_text: Label
+var _nova_name: Label
+var _portrait: Control
+var _forms_row: HBoxContainer
+var _form_badges: Array[PanelContainer] = []
+var _form_name: Label
+var _prompts: VBoxContainer
+var _title_card: VBoxContainer
+var _save_toast: HBoxContainer
 var _queue: PackedStringArray = []
 var _nova_time := 0.0
 var _chars := 0.0
+var _last_char := 0
+var _pause: PauseMenu
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(FONT_NAMES)
-	var theme := Theme.new()
-	theme.default_font = font
-	theme.default_font_size = 22
-	var root := Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.theme = theme
-	add_child(root)
-
-	# 左上：收集品
-	var stats := VBoxContainer.new()
-	stats.position = Vector2(28, 22)
-	root.add_child(stats)
-	_coins = _label(stats, 26, Color("ffd23f"))
-	_energy = _label(stats, 22, Color("4dfcff"))
-	_shield = _label(stats, 22, Color("9cff9c"))
-	_frag = _label(stats, 22, Color("c9a6ff"))
-
-	# 顶部：NOVA 对话
-	_nova_panel = PanelContainer.new()
-	_nova_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.06, 0.08, 0.14, 0.82), Color("46c3ff")))
-	_place(_nova_panel, Vector4(0.5, 0, 0.5, 0), Vector4(-410, 24, 410, 24))
-	_nova_panel.visible = false
-	root.add_child(_nova_panel)
-	_nova_label = Label.new()
-	_nova_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_nova_label.add_theme_font_size_override("font_size", 22)
-	_nova_panel.add_child(_nova_label)
-
-	# 底部：形态栏
-	var bottom := VBoxContainer.new()
-	bottom.alignment = BoxContainer.ALIGNMENT_END
-	_place(bottom, Vector4(0.5, 1, 0.5, 1), Vector4(-330, -118, 330, -20))
-	root.add_child(bottom)
-	_form_hint = _label(bottom, 17, Color(1, 1, 1, 0.7))
-	_form_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var bar := HBoxContainer.new()
-	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 10)
-	bottom.add_child(bar)
-	for i in MorphBall.FORMS.size():
-		var pc := PanelContainer.new()
-		pc.custom_minimum_size = Vector2(118, 46)
-		bar.add_child(pc)
-		var l := Label.new()
-		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		pc.add_child(l)
-		_form_slots.append(l)
-
-	# 右下：按键提示
-	_hint = Label.new()
-	_place(_hint, Vector4(1, 1, 1, 1), Vector4(-330, -220, -24, -20))
-	_hint.add_theme_font_size_override("font_size", 17)
-	_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
-	_hint.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	root.add_child(_hint)
-
-	# 暂停
-	_pause = PanelContainer.new()
-	_pause.add_theme_stylebox_override("panel", _panel_style(Color(0.04, 0.05, 0.1, 0.92), Color("ffd23f")))
-	_place(_pause, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-320, -230, 320, 230))
-	_pause.visible = false
-	root.add_child(_pause)
-	_pause_label = Label.new()
-	_pause.add_child(_pause_label)
-
-	GameState.coins_changed.connect(func(_v: int) -> void: _refresh_stats())
+	_root = Control.new()
+	_root.theme = UIKit.theme()
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_root)
+	_build_stats()
+	_build_objective()
+	_build_nova()
+	_build_forms()
+	_build_prompts()
+	_build_title_card()
+	_build_save_toast()
+	_pause = PauseMenu.new()
+	add_child(_pause)
+	GameState.coins_changed.connect(func(_v: int) -> void: _refresh_stats(true))
 	GameState.energy_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.shield_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.fragments_changed.connect(func(_v: int) -> void: _refresh_stats())
-	GameState.form_unlocked.connect(_on_form_unlocked)
 	GameState.form_changed.connect(func(_i: int) -> void: _refresh_forms())
-	GameState.device_changed.connect(func(_k: String) -> void: _refresh_hints())
+	GameState.form_unlocked.connect(_on_form_unlocked)
+	GameState.device_changed.connect(func(_k: String) -> void: _refresh_prompts())
 	GameState.nova_say.connect(func(t: String) -> void: _queue.append(t))
+	GameState.objective_changed.connect(_on_objective)
+	SaveGame.saved.connect(_on_saved)
 	_refresh_stats()
 	_refresh_forms()
-	_refresh_hints()
+	_refresh_prompts()
+	if GameState.objective_index >= 0:
+		_on_objective(GameState.objective_index, GameState.objective_text, GameState.objective_pos)
 
-## anchors = (左, 上, 右, 下) 锚点比例；offsets = 相对锚点的像素偏移
-func _place(c: Control, anchors: Vector4, offsets: Vector4) -> void:
-	c.anchor_left = anchors.x
-	c.anchor_top = anchors.y
-	c.anchor_right = anchors.z
-	c.anchor_bottom = anchors.w
-	c.offset_left = offsets.x
-	c.offset_top = offsets.y
-	c.offset_right = offsets.z
-	c.offset_bottom = offsets.w
+# ================================================================ 构建
 
-func _label(parent: Node, size: int, color: Color) -> Label:
-	var l := Label.new()
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", color)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	l.add_theme_constant_override("outline_size", 6)
-	parent.add_child(l)
-	return l
+func _build_stats() -> void:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG, UIKit.LINE, 16, 14))
+	UIKit.place(p, Vector4(0, 0, 0, 0), Vector4(24, 22, 290, 22))
+	_root.add_child(p)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	p.add_child(v)
+	var coin_row := HBoxContainer.new()
+	coin_row.add_theme_constant_override("separation", 10)
+	coin_row.add_child(UIIcon.make("coin", UIKit.ACCENT2, 30))
+	_coins = UIKit.label("0", 30, Color.WHITE, true)
+	coin_row.add_child(_coins)
+	v.add_child(coin_row)
+	var e_row := HBoxContainer.new()
+	e_row.add_theme_constant_override("separation", 10)
+	e_row.add_child(UIIcon.make("energy", UIKit.ACCENT, 22))
+	_energy_bar = ProgressBar.new()
+	_energy_bar.show_percentage = false
+	_energy_bar.max_value = GameState.ENERGY_PER_SHIELD
+	_energy_bar.custom_minimum_size = Vector2(150, 10)
+	_energy_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bg := UIKit.panel(Color(1, 1, 1, 0.1), Color(0, 0, 0, 0), 5, 0)
+	var fg := UIKit.panel(UIKit.ACCENT, Color(0, 0, 0, 0), 5, 0)
+	bg.shadow_size = 0
+	fg.shadow_size = 0
+	_energy_bar.add_theme_stylebox_override("background", bg)
+	_energy_bar.add_theme_stylebox_override("fill", fg)
+	e_row.add_child(_energy_bar)
+	for i in GameState.max_shield:
+		var s := UIIcon.make("shield", UIKit.GOOD, 20)
+		_shields.append(s)
+		e_row.add_child(s)
+	v.add_child(e_row)
+	_frag_row = HBoxContainer.new()
+	_frag_row.add_theme_constant_override("separation", 10)
+	_frag_row.add_child(UIIcon.make("fragment", Color("c9a6ff"), 22))
+	_frag = UIKit.label("0 / 3", 20, Color("d9c6ff"), true)
+	_frag_row.add_child(_frag)
+	v.add_child(_frag_row)
 
-func _panel_style(bg: Color, border: Color) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = bg
-	s.border_color = border
-	s.set_border_width_all(2)
-	s.set_corner_radius_all(10)
-	s.set_content_margin_all(16)
-	return s
+func _build_objective() -> void:
+	_obj_card = PanelContainer.new()
+	var st := UIKit.panel(UIKit.BG, UIKit.ACCENT2, 16, 16, 0)
+	st.border_width_left = 4
+	_obj_card.add_theme_stylebox_override("panel", st)
+	UIKit.place(_obj_card, Vector4(1, 0, 1, 0), Vector4(-470, 22, -24, 22))
+	_obj_card.visible = false
+	_root.add_child(_obj_card)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	_obj_card.add_child(v)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	h.add_child(UIIcon.make("objective", UIKit.ACCENT2, 18))
+	h.add_child(UIKit.label("目标", 16, UIKit.ACCENT2, true))
+	v.add_child(h)
+	_obj_text = UIKit.label("", 22, UIKit.TEXT, true)
+	_obj_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_obj_text)
+
+func _build_nova() -> void:
+	_nova = PanelContainer.new()
+	_nova.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG_SOLID, Color(0.31, 0.82, 1.0, 0.45), 18, 16, 2))
+	UIKit.place(_nova, Vector4(0.5, 1, 0.5, 1), Vector4(-480, -250, 480, -250))
+	_nova.visible = false
+	_root.add_child(_nova)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 16)
+	_nova.add_child(h)
+	_portrait = NovaPortrait.new()
+	_portrait.custom_minimum_size = Vector2(76, 76)
+	h.add_child(_portrait)
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	_nova_name = UIKit.label("NOVA · 站点 AI", 17, UIKit.ACCENT, true)
+	v.add_child(_nova_name)
+	_nova_text = UIKit.label("", 23, UIKit.TEXT)
+	_nova_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_nova_text)
+
+func _build_forms() -> void:
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	UIKit.place(v, Vector4(0, 1, 0, 1), Vector4(28, -150, 520, -28))
+	v.alignment = BoxContainer.ALIGNMENT_END
+	_root.add_child(v)
+	_form_name = UIKit.outline(UIKit.label("", 22, Color.WHITE, true), 8)
+	v.add_child(_form_name)
+	_forms_row = HBoxContainer.new()
+	_forms_row.add_theme_constant_override("separation", 10)
+	v.add_child(_forms_row)
+	for i in MorphBall.FORMS.size():
+		var pc := PanelContainer.new()
+		pc.custom_minimum_size = Vector2(56, 56)
+		var c := CenterContainer.new()
+		pc.add_child(c)
+		_forms_row.add_child(pc)
+		_form_badges.append(pc)
+	var hint := HBoxContainer.new()
+	hint.add_theme_constant_override("separation", 6)
+	hint.name = "Hint"
+	v.add_child(hint)
+
+func _build_prompts() -> void:
+	_prompts = VBoxContainer.new()
+	_prompts.alignment = BoxContainer.ALIGNMENT_END
+	_prompts.add_theme_constant_override("separation", 8)
+	UIKit.place(_prompts, Vector4(1, 1, 1, 1), Vector4(-300, -220, -28, -28))
+	_root.add_child(_prompts)
+
+func _build_title_card() -> void:
+	_title_card = VBoxContainer.new()
+	_title_card.alignment = BoxContainer.ALIGNMENT_CENTER
+	UIKit.place(_title_card, Vector4(0.5, 0.35, 0.5, 0.35), Vector4(-500, -90, 500, 90))
+	_title_card.modulate.a = 0.0
+	_title_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_title_card)
+
+func _build_save_toast() -> void:
+	_save_toast = HBoxContainer.new()
+	_save_toast.add_theme_constant_override("separation", 8)
+	UIKit.place(_save_toast, Vector4(1, 0, 1, 0), Vector4(-220, -60, -30, -30))
+	_save_toast.alignment = BoxContainer.ALIGNMENT_END
+	_save_toast.add_child(UIIcon.make("save", UIKit.ACCENT, 22))
+	_save_toast.add_child(UIKit.outline(UIKit.label("已自动保存", 18, UIKit.TEXT, true), 6))
+	_save_toast.modulate.a = 0.0
+	_root.add_child(_save_toast)
+
+# ================================================================ 刷新
+
+func _refresh_stats(pop := false) -> void:
+	_coins.text = str(GameState.coins)
+	if pop:
+		_coins.pivot_offset = _coins.size * 0.5
+		var tw := create_tween()
+		_coins.scale = Vector2(1.25, 1.25)
+		tw.tween_property(_coins, "scale", Vector2.ONE, 0.18)
+	_energy_bar.value = GameState.energy if GameState.shield < GameState.max_shield else GameState.ENERGY_PER_SHIELD
+	for i in _shields.size():
+		_shields[i].filled = i < GameState.shield
+		_shields[i].queue_redraw()
+	_frag_row.visible = GameState.fragments_total > 0
+	_frag.text = "%d / %d" % [GameState.fragments, GameState.fragments_total]
+
+func _refresh_forms() -> void:
+	var p := GameState.player as MorphBall
+	var cur := p.form if p else 0
+	var unlocked_count := 0
+	for i in _form_badges.size():
+		var f: Dictionary = MorphBall.FORMS[i]
+		var pc := _form_badges[i]
+		var unlocked: bool = GameState.unlocked_forms[i]
+		if unlocked:
+			unlocked_count += 1
+		var active := i == cur
+		pc.visible = unlocked or i <= 2
+		var st := UIKit.panel(Color(f.color, 0.3) if active else UIKit.BG, f.color if active else UIKit.LINE, 999, 4, 3 if active else 1)
+		if active:
+			st.shadow_color = Color(f.color, 0.5)
+			st.shadow_size = 12
+		pc.add_theme_stylebox_override("panel", st)
+		pc.custom_minimum_size = Vector2(64, 64) if active else Vector2(50, 50)
+		var c := pc.get_child(0)
+		for ch in c.get_children():
+			ch.queue_free()
+		if unlocked:
+			c.add_child(UIIcon.make("form_" + f.id, f.color if active else Color(f.color, 0.75), 30 if active else 22))
+		else:
+			c.add_child(UIIcon.make("lock", Color(1, 1, 1, 0.3), 18))
+	_form_name.text = MorphBall.FORMS[cur].name if p else ""
+	var hint: HBoxContainer = _forms_row.get_parent().get_node("Hint")
+	for ch in hint.get_children():
+		ch.queue_free()
+	if unlocked_count > 1:
+		hint.add_child(UIKit.glyph("form", 16))
+		hint.add_child(UIKit.outline(UIKit.label("切换形态", 16, UIKit.DIM), 6))
+	_refresh_prompts()
+
+func _refresh_prompts() -> void:
+	if _prompts == null:
+		return
+	for c in _prompts.get_children():
+		c.queue_free()
+	var p := GameState.player as MorphBall
+	if p:
+		_prompts.add_child(UIKit.prompt("ability", MorphBall.FORMS[p.form].ability))
+	_prompts.add_child(UIKit.prompt("boost", "加速"))
+	if GameState.allow_jump:
+		_prompts.add_child(UIKit.prompt("jump", "跳跃"))
+	_prompts.add_child(UIKit.prompt("pause", "菜单"))
+	if _form_badges.size() > 0:
+		pass
+
+func _on_form_unlocked(i: int) -> void:
+	_refresh_forms()
+	var pc := _form_badges[i]
+	pc.pivot_offset = pc.size * 0.5
+	var tw := create_tween()
+	for k in 3:
+		tw.tween_property(pc, "scale", Vector2.ONE * 1.35, 0.12)
+		tw.tween_property(pc, "scale", Vector2.ONE, 0.12)
+	show_area_title("新形态", MorphBall.FORMS[i].name, MorphBall.FORMS[i].ability)
+
+func _on_objective(_i: int, text: String, _pos: Vector3) -> void:
+	_obj_text.text = text
+	_obj_card.visible = text != ""
+	# 新目标：卡片从右侧滑入并闪一下
+	_obj_card.modulate = Color(1.6, 1.4, 0.8, 0.0)
+	var tw := create_tween().set_parallel()
+	tw.tween_property(_obj_card, "modulate", Color.WHITE, 0.5)
+	if _i > 0:
+		Sfx.play("checkpoint", Vector3.INF, -10.0, 0.0)
+
+func _on_saved() -> void:
+	var tw := create_tween()
+	tw.tween_property(_save_toast, "modulate:a", 1.0, 0.25)
+	tw.tween_interval(1.6)
+	tw.tween_property(_save_toast, "modulate:a", 0.0, 0.5)
+
+## 屏幕中央的大标题（进入区域、解锁形态）
+func show_area_title(small: String, big: String, sub := "") -> void:
+	for c in _title_card.get_children():
+		c.queue_free()
+	var a := UIKit.outline(UIKit.label(small, 26, UIKit.ACCENT2, true), 8)
+	a.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var b := UIKit.outline(UIKit.label(big, 72, Color.WHITE, true), 12, Color(0.03, 0.12, 0.25, 0.8))
+	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title_card.add_child(a)
+	_title_card.add_child(b)
+	if sub != "":
+		var c := UIKit.outline(UIKit.label(_fmt(sub), 24, UIKit.TEXT), 8)
+		c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_title_card.add_child(c)
+	var tw := create_tween()
+	_title_card.scale = Vector2(0.92, 0.92)
+	_title_card.pivot_offset = _title_card.size * 0.5
+	tw.tween_property(_title_card, "modulate:a", 1.0, 0.5)
+	tw.parallel().tween_property(_title_card, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(2.2)
+	tw.tween_property(_title_card, "modulate:a", 0.0, 0.8)
 
 ## 把 {jump} 之类的占位符换成当前设备的按键
 func _fmt(t: String) -> String:
@@ -137,86 +314,33 @@ func _fmt(t: String) -> String:
 		t = t.replace("{%s}" % key, "【%s】" % GameState.glyph(key))
 	return t
 
-func _on_form_unlocked(i: int) -> void:
-	_refresh_forms()
-	var pc := _form_slots[i].get_parent() as Control
-	pc.pivot_offset = pc.size * 0.5
-	var tw := create_tween()
-	for k in 3:
-		tw.tween_property(pc, "scale", Vector2.ONE * 1.25, 0.12)
-		tw.tween_property(pc, "scale", Vector2.ONE, 0.12)
-
-func _refresh_stats() -> void:
-	_coins.text = "◆ 金币  %d" % GameState.coins
-	if GameState.shield < GameState.max_shield:
-		_energy.text = "⚡ 能源  %d / %d（集满修复护盾）" % [GameState.energy, GameState.ENERGY_PER_SHIELD]
-	else:
-		_energy.text = "⚡ 能源  %d" % GameState.energy
-	_shield.text = "护盾  " + "■".repeat(GameState.shield) + "□".repeat(GameState.max_shield - GameState.shield)
-	_frag.visible = GameState.fragments_total > 0
-	_frag.text = "◈ 记忆碎片  %d / %d" % [GameState.fragments, GameState.fragments_total]
-
-func _refresh_forms() -> void:
-	var p := GameState.player as MorphBall
-	var current := p.form if p else 0
-	for i in _form_slots.size():
-		var f: Dictionary = MorphBall.FORMS[i]
-		var l := _form_slots[i]
-		var unlocked: bool = GameState.unlocked_forms[i]
-		l.text = f.name if unlocked else "？"
-		var pc := l.get_parent() as PanelContainer
-		var active := i == current
-		pc.add_theme_stylebox_override("panel", _panel_style(
-			Color(f.color, 0.35) if active else Color(0.05, 0.06, 0.1, 0.7),
-			f.color if active else Color(1, 1, 1, 0.15)))
-		l.add_theme_color_override("font_color", Color.WHITE if active else Color(1, 1, 1, 0.55))
-	_refresh_hints()
-
-func _refresh_hints() -> void:
-	var p := GameState.player as MorphBall
-	var ability: String = MorphBall.FORMS[p.form].ability if p else "冲刺"
-	_form_hint.text = "切换形态 %s · 直选 %s" % [GameState.glyph("form"), GameState.glyph("form_direct")]
-	_hint.text = "\n".join([
-		"移动  %s" % GameState.glyph("move"),
-		"镜头  %s" % GameState.glyph("camera"),
-		("跳跃  %s" % GameState.glyph("jump")) if GameState.allow_jump else "",
-		"%s  %s" % [ability, GameState.glyph("ability")],
-		"加速  %s" % GameState.glyph("boost"),
-		"抓取/投掷  %s" % GameState.glyph("grab"),
-		"俯视  %s   复位  %s" % [GameState.glyph("view_toggle"), GameState.glyph("respawn")],
-	])
-	_pause_label.text = "\n".join([
-		"暂停", "",
-		"当前设备：%s" % {"ps": "PS5 手柄", "xbox": "Xbox 手柄", "kbm": "键盘鼠标"}[GameState.device],
-		"", _hint.text, "",
-		"%s 继续" % GameState.glyph("pause"),
-	])
+# ================================================================ NOVA 对话
 
 func _process(delta: float) -> void:
-	# NOVA 打字机效果
 	if _nova_time <= 0.0 and not _queue.is_empty():
 		var t := _fmt(_queue[0])
 		_queue.remove_at(0)
-		_nova_label.text = "NOVA：" + t
-		_nova_label.visible_characters = 0
+		_nova_text.text = t
+		_nova_text.visible_characters = 0
 		_chars = 0.0
-		_nova_time = 2.6 + t.length() * 0.06
-		_nova_panel.visible = true
+		_last_char = 0
+		_nova_time = 2.8 + t.length() * 0.065
+		_nova.visible = true
+		_nova.modulate.a = 0.0
+		create_tween().tween_property(_nova, "modulate:a", 1.0, 0.2)
 	if _nova_time > 0.0:
 		_nova_time -= delta
-		_chars += delta * 40.0
-		_nova_label.visible_characters = int(_chars)
+		_chars += delta * 38.0
+		var n := int(_chars)
+		_nova_text.visible_characters = n
+		# 语音拟声：每两个字发一个音节
+		if n != _last_char and n <= _nova_text.text.length() and n % 2 == 0:
+			var ch := _nova_text.text.substr(n - 1, 1) if n > 0 else ""
+			if ch.strip_edges() != "" and not ch in "，。！？、…—「」【】":
+				Sfx.play("voice_nova", Vector3.INF, -12.0, 0.18)
+		_last_char = n
+		(_portrait as NovaPortrait).talking = n < _nova_text.text.length()
 		if _nova_time <= 0.0:
-			_nova_panel.visible = false
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause"):
-		var paused := not get_tree().paused
-		get_tree().paused = paused
-		_pause.visible = paused
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else Input.MOUSE_MODE_CAPTURED
-		get_viewport().set_input_as_handled()
-	elif get_tree().paused and event.is_action_pressed("jump"):
-		get_tree().paused = false
-		_pause.visible = false
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			var tw := create_tween()
+			tw.tween_property(_nova, "modulate:a", 0.0, 0.25)
+			tw.tween_callback(func() -> void: _nova.visible = _nova_time > 0.0)

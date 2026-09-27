@@ -85,6 +85,7 @@ func _on_player_entered() -> void:
 	var p := GameState.player as MorphBall
 	GameState.unlock_form(form)
 	Sfx.play("unlock", Vector3.INF, 0.0, 0.0)
+	get_tree().create_timer(0.9, true, false, true).timeout.connect(func() -> void: Sfx.play("pix_happy", Vector3.INF, -6.0, 0.05))
 	Music.duck(2.5, 0.2)
 	Music.set_default("bright")
 	# 慢动作 0.8 秒（真实时间）

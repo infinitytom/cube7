@@ -3,6 +3,7 @@ extends Zone
 ## 记忆碎片：隐藏收集品，拾取后在对话框显示一段科学家日志
 
 @export_multiline var log_text := ""
+var frag_id := ""
 var _model: Node3D
 var _t := 0.0
 
@@ -34,7 +35,11 @@ func _process(delta: float) -> void:
 
 func _on_player_entered() -> void:
 	GameState.add_fragment(log_text)
+	if frag_id != "" and not SaveGame.data.is_empty():
+		(SaveGame.data["fragments"] as Array).append(frag_id)
+		SaveGame.write()
 	Sfx.play("fragment", Vector3.INF, -2.0, 0.0)
+	Sfx.play("pix_curious", Vector3.INF, -8.0, 0.05)
 	GameState.say("找到记忆碎片（%d/%d）——「%s」" % [GameState.fragments, GameState.fragments_total, log_text])
 	GameState.shake.emit(0.15)
 	queue_free()

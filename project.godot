@@ -12,7 +12,7 @@ config_version=5
 
 config/name="立方-7 Cube-7"
 config/description="体素箱庭解谜冒险原型"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/title.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -21,6 +21,9 @@ config/icon="res://icon.svg"
 GameState="*res://scripts/game/game_state.gd"
 Music="*res://scripts/game/music.gd"
 Sfx="*res://scripts/game/sfx.gd"
+SaveGame="*res://scripts/meta/save_game.gd"
+Settings="*res://scripts/meta/settings.gd"
+Flow="*res://scripts/meta/flow.gd"
 
 [display]
 

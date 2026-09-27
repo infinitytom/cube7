@@ -39,18 +39,26 @@ const DOME_R := 11
 const SOCKET := Vector3i(100, G + 1, 29)
 
 var heights := {}          # Vector2i -> 地面高度（第一个空气层的 y）
+var backdrop := false      ## 只当标题画面背景：不放机关、不放音乐
 var socket: ItemSocket
+var form_core: Node
+var fragments := {}        # id -> 节点
 var crystal: UsableItem
 var bridge_cells: Array = []
 var bridge_built := false
 var _noise := FastNoiseLite.new()
+
+## 出生时的镜头朝向：从西南方看过去，避开坠毁的飞船，东边的出口在画面右侧
+func spawn_yaw() -> float:
+	return -0.75
 
 func spawn_position() -> Vector3:
 	return world.voxel_top(SPAWN + Vector3i.DOWN) + Vector3.UP * 0.55
 
 func build() -> void:
 	world = get_node(world_path) as VoxelWorld
-	GameState.reset_for_level([true, false, false, false, false] as Array[bool], false, 1.0, 3)
+	if not backdrop:
+		GameState.reset_for_level([true, false, false, false, false] as Array[bool], false, 1.0, 3)
 	var sky := SkyWorld.new()
 	sky.center = Vector3(SIZE.x * 0.25, 0, SIZE.z * 0.25)
 	add_child(sky)
@@ -72,6 +80,8 @@ func build() -> void:
 	world.rebuild_all()
 	scatter_decor(Vector3i(0, G - 3, 0), Vector3i(SIZE.x - 1, G + 12, SIZE.z - 1), 0.28, 0.07)
 	decor.commit()
+	if backdrop:
+		return
 	_logic()
 	world.item_dropped.connect(_on_item_dropped)
 	Music.set_default("explore")
@@ -136,7 +146,19 @@ func _crater_and_pod() -> void:
 	world.fill_ramp(Vector3i(22, G - 2, 72), Vector3i(25, G - 2, 75), VoxelWorld.Ramp.PX, Blocks.DIRT, true)
 	# 坑口的木箱栅栏：冲上来撞开它
 	world.fill_box(Vector3i(27, G, 71), Vector3i(27, G + 1, 76), Blocks.CRATE)
-	# 坠毁的飞船（半埋在坑的西侧）
+	# 坠毁的飞船：新游戏第一次进入时，等开场演出里坠落后再出现
+	if not _ship_deferred():
+		_place_ship()
+	# 坑边的树
+	for t in [Vector3i(8, G, 64), Vector3i(24, G, 64), Vector3i(6, G, 83), Vector3i(25, G, 84)]:
+		if h_at(t.x, t.z) == G:
+			tree(t, 5 + rng.randi() % 2, 2.3)
+
+func _ship_deferred() -> bool:
+	return not backdrop and Flow.mode == "new" and not bool(SaveGame.data.get("intro_seen", false))
+
+## 坠毁的飞船（半埋在坑的西侧）+ 冒烟
+func _place_ship() -> void:
 	var pc := Vector3(11.0, G - 1.0, 74.0)
 	for z in range(69, 80):
 		for y in range(G - 3, G + 3):
@@ -153,7 +175,7 @@ func _crater_and_pod() -> void:
 	smoke.lifetime = 4.0
 	smoke.direction = Vector3.UP
 	smoke.spread = 12.0
-	smoke.gravity = Vector3(0.4, 0.6, 0)
+	smoke.gravity = Vector3(-0.15, 0.7, 0)
 	smoke.initial_velocity_min = 0.4
 	smoke.initial_velocity_max = 0.8
 	smoke.scale_amount_min = 0.3
@@ -162,17 +184,16 @@ func _crater_and_pod() -> void:
 	sm.radius = 0.3
 	sm.height = 0.6
 	var smat := StandardMaterial3D.new()
-	smat.albedo_color = Color(0.8, 0.8, 0.85, 0.35)
+	smat.albedo_color = Color(0.8, 0.8, 0.85, 0.22)
+	smat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA   # 靠近镜头的烟淡出，不糊屏幕
+	smat.distance_fade_min_distance = 1.5
+	smat.distance_fade_max_distance = 6.0
 	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sm.material = smat
 	smoke.mesh = sm
 	add_child(smoke)
 	smoke.global_position = world.voxel_center(Vector3i(9, G + 2, 74))
-	# 坑边的树
-	for t in [Vector3i(8, G, 64), Vector3i(24, G, 64), Vector3i(6, G, 83), Vector3i(25, G, 84)]:
-		if h_at(t.x, t.z) == G:
-			tree(t, 5 + rng.randi() % 2, 2.3)
 
 # ================================================================ B 花园
 
@@ -387,7 +408,31 @@ func _fences() -> void:
 
 # ================================================================ 机关、收集品、对话
 
+func _v(c: Vector3i) -> Vector3:
+	return world.voxel_top(c + Vector3i.DOWN)
+
+func _objective(i: int, text: String, cell: Vector3i, a: Vector3i, b: Vector3i) -> void:
+	zone(ObjectiveZone, a, b, {"index": i, "text": text, "marker": _v(cell)})
+
+func _fragment(id: String, cell: Vector3i, props: Dictionary) -> void:
+	var f := zone(MemoryFragment, cell, cell + Vector3i(0, 1, 0), props)
+	f.set("frag_id", id)
+	fragments[id] = f
+
 func _logic() -> void:
+	var marker := ObjectiveMarker.new()
+	marker.name = "ObjectiveMarker"
+	add_child(marker)
+	GameState.set_objective(0, "离开坠毁坑（东边有坡道）", _v(Vector3i(26, G, 74)))
+	GameState.form_unlocked.connect(func(i: int) -> void:
+		if i == MorphBall.DRILL:
+			GameState.set_objective(5, "用钻头打通东边小桥上的泥土墙", _v(Vector3i(77, G + 7, 52))))
+	_objective(1, "前往远处的玻璃温室（跟着金币走）", Vector3i(47, G, 72), Vector3i(27, G - 1, 68), Vector3i(31, G + 4, 80))
+	_objective(2, "想办法越过深沟——看看那座砂塔", Vector3i(51, G + 2, 70), Vector3i(42, G, 62), Vector3i(51, G + 4, 80))
+	_objective(3, "登上高台，进入玻璃温室", Vector3i(64, G + 6, 49), Vector3i(62, G, 64), Vector3i(68, G + 4, 76))
+	_objective(4, "拿到温室中央的能量核心", DOME_C + Vector3i(0, 1, 0), Vector3i(55, G + 6, 27), Vector3i(73, G + 12, 45))
+	_objective(6, "找到通往中枢塔的路（试试往下钻）", Vector3i(91, G + 6, 51), Vector3i(83, G + 6, 50), Vector3i(86, G + 9, 54))
+	_objective(7, "为中枢塔找一块能量晶块（西边的岩丘）", Vector3i(92, G + 5, 21), Vector3i(90, G + 2, 30), Vector3i(100, G + 6, 42))
 	# A
 	zone(Checkpoint, SPAWN + Vector3i(-2, 0, -2), SPAWN + Vector3i(2, 3, 2))
 	talk(SPAWN + Vector3i(-3, 0, -3), SPAWN + Vector3i(3, 5, 3), [
@@ -397,7 +442,7 @@ func _logic() -> void:
 	talk(Vector3i(21, G - 2, 70), Vector3i(26, G + 3, 78), [
 		"坑口被木箱堵住了。别减速，直接撞上去——速度就是力量。",
 	])
-	zone(MemoryFragment, Vector3i(12, G - 2, 79), Vector3i(12, G - 1, 79), {"log_text": "艾拉博士，第 12 天：引擎能把一块岩石变成可以随意拆装的方块。整颗星球都能这样就好了。"})
+	_fragment("gh_1", Vector3i(12, G - 2, 79), {"log_text": "艾拉博士，第 12 天：引擎能把一块岩石变成可以随意拆装的方块。整颗星球都能这样就好了。"})
 	coin_line(Vector3i(20, G - 2, 74), Vector3i(24, G - 1, 74), 3)
 	coin_line(Vector3i(29, G, 74), Vector3i(44, G, 74), 6)
 	coin_line(Vector3i(33, G, 64), Vector3i(33, G, 67), 2)
@@ -418,11 +463,11 @@ func _logic() -> void:
 	talk(Vector3i(58, G + 6, 49), Vector3i(68, G + 10, 56), [
 		"温室的玻璃很结实，普通速度撞不开。按住{boost}加速，或者按{ability}冲刺！",
 	])
-	zone(FormCore, DOME_C + Vector3i(-1, 0, -1), DOME_C + Vector3i(1, 2, 1), {
+	form_core = zone(FormCore, DOME_C + Vector3i(-1, 0, -1), DOME_C + Vector3i(1, 2, 1), {
 		"form": MorphBall.DRILL,
 		"unlock_text": "钻头形态解锁！按住{ability}往前钻，静止时往下钻。用{form}或{form_direct}随时切换形态。",
 	})
-	zone(MemoryFragment, DOME_C + Vector3i(5, 0, 5), DOME_C + Vector3i(5, 1, 5), {"log_text": "艾拉博士，第 40 天：星核的读数越来越不稳定。他们说我太紧张了。"})
+	_fragment("gh_2", DOME_C + Vector3i(5, 0, 5), {"log_text": "艾拉博士，第 40 天：星核的读数越来越不稳定。他们说我太紧张了。"})
 	talk(Vector3i(68, G + 6, 50), Vector3i(75, G + 10, 54), [
 		"通往东边的小桥被泥土堵死了。现在你有钻头了——挖过去！",
 	])
@@ -431,7 +476,7 @@ func _logic() -> void:
 	talk(Vector3i(87, G + 6, 48), Vector3i(96, G + 10, 56), [
 		"这片深色的松土……下面好像是空的。停下来按住{ability}往下钻试试。普通地面是钻不下去的，只有松土可以。",
 	])
-	zone(MemoryFragment, Vector3i(89, G + 2, 53), Vector3i(89, G + 2, 53), {"log_text": "艾拉博士，最后一天：我启动了引擎。对不起，这是唯一能保住所有人的办法。"})
+	_fragment("gh_3", Vector3i(89, G + 2, 53), {"log_text": "艾拉博士，最后一天：我启动了引擎。对不起，这是唯一能保住所有人的办法。"})
 	# F
 	zone(Checkpoint, Vector3i(92, G + 2, 36), Vector3i(97, G + 5, 40))
 	talk(Vector3i(90, G + 2, 30), Vector3i(100, G + 6, 42), [
@@ -449,6 +494,109 @@ func _logic() -> void:
 	zone(MusicZone, Vector3i(42, G - 4, 58), Vector3i(62, G + 6, 88), {"state": "puzzle"})
 	zone(MusicZone, Vector3i(84, G + 2, 14), Vector3i(106, G + 8, 34), {"state": "puzzle"})
 
+## 继续游戏：恢复存档里的进度
+func apply_save(d: Dictionary) -> void:
+	var forms: Array = d.get("forms", [])
+	if forms.size() == GameState.unlocked_forms.size():
+		for i in forms.size():
+			GameState.unlocked_forms[i] = bool(forms[i])
+	GameState.coins = int(d.get("coins", 0))
+	GameState.coins_changed.emit(GameState.coins)
+	for id in (d.get("fragments", []) as Array):
+		if fragments.has(id) and is_instance_valid(fragments[id]):
+			fragments[id].queue_free()
+			GameState.fragments += 1
+	GameState.fragments_changed.emit(GameState.fragments)
+	if GameState.unlocked_forms[MorphBall.DRILL] and is_instance_valid(form_core):
+		form_core.queue_free()
+		Music.set_default("bright")
+	if bool((d.get("flags", {}) as Dictionary).get("gh_bridge", false)):
+		socket.done = true
+		_build_bridge(true)
+	var obj := int(d.get("objective", -1))
+	if obj >= 0:
+		GameState.objective_index = -1
+		GameState.set_objective(obj, str(d.get("objective_text", "")), _vec(d.get("objective_pos", null)))
+
+static func _vec(a) -> Vector3:
+	return Vector3(a[0], a[1], a[2]) if a is Array and a.size() == 3 else Vector3.INF
+
+## 开场演出：云海全景 → 熄灭的温室与中枢塔 → 飞船坠落 → NOVA 苏醒
+func intro_shots() -> Array:
+	var V := VoxelWorld.VOXEL
+	var c := Vector3(64, G, 50) * V
+	return [
+		{"black": true, "from": Vector3(-40, 40, 140) * V, "to": Vector3(-20, 38, 130) * V, "look": c, "dur": 4.5,
+			"lines": [["", "星历 3127 年。"], ["", "殖民星球「立方-7」的最后一条通讯，停在三年前。"]]},
+		{"from": Vector3(-30, 60, 150) * V, "to": Vector3(20, 45, 140) * V, "look": c, "dur": 6.0,
+			"lines": [["", "那一天，整颗星球像被某种力量拆开、又重新拼起——"], ["", "变成了漂浮在云海之上的方块。"]]},
+		{"from": Vector3(40, 34, 70) * V, "to": Vector3(52, 32, 62) * V, "look_from": Vector3(64, 28, 36) * V, "look_to": Vector3(100, 30, 24) * V, "dur": 6.0,
+			"lines": [["", "研究站的灯一盏接一盏熄灭。没有人知道科学家们去了哪里。"], ["", "直到今天。"]]},
+		{"from": Vector3(40, 30, 110) * V, "to": Vector3(32, 26, 100) * V, "look_from": Vector3(10, 70, 60) * V, "look_to": Vector3(15, 18, 74) * V, "dur": 3.2, "event": "crash"},
+		{"from": Vector3(31, 28, 90) * V, "to": Vector3(26, 25.5, 85) * V, "look": Vector3(16, 18.5, 74) * V, "dur": 7.5,
+			"lines": [["NOVA", "……信号确认。维护单元 PIX，启动。"], ["NOVA", "我是站点 AI「NOVA」。三年了……终于有人来了。"], ["NOVA", "先离开这个坑。温室和中枢塔都在东边——我得弄清楚，这里到底发生了什么。"]]},
+	]
+
+## 飞船坠落特效
+func crash_fx() -> void:
+	var V := VoxelWorld.VOXEL
+	var target := Vector3(14, G - 1, 74) * V
+	var start := target + Vector3(-30, 45, -40)
+	var pod := Node3D.new()
+	add_child(pod)
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.9
+	sm.height = 1.8
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color("ffd9a0")
+	m.emission_enabled = true
+	m.emission = Color("ff9a3c")
+	m.emission_energy_multiplier = 6.0
+	sm.material = m
+	mi.mesh = sm
+	pod.add_child(mi)
+	var trail := CPUParticles3D.new()
+	trail.amount = 80
+	trail.lifetime = 1.2
+	trail.local_coords = false
+	trail.gravity = Vector3.ZERO
+	trail.initial_velocity_min = 0.2
+	trail.initial_velocity_max = 1.0
+	trail.scale_amount_min = 0.6
+	trail.scale_amount_max = 1.6
+	var tm := SphereMesh.new()
+	tm.radius = 0.4
+	tm.height = 0.8
+	var tmat := StandardMaterial3D.new()
+	tmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	tmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	tmat.albedo_color = Color(1.0, 0.7, 0.4, 0.5)
+	tm.material = tmat
+	trail.mesh = tm
+	pod.add_child(trail)
+	var light := OmniLight3D.new()
+	light.light_color = Color("ffb060")
+	light.light_energy = 4.0
+	light.omni_range = 12.0
+	pod.add_child(light)
+	pod.global_position = start
+	Sfx.play("dash", Vector3.INF, 4.0, 0.0)
+	var tw := create_tween()
+	tw.tween_property(pod, "global_position", target, 1.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	await tw.finished
+	Sfx.play("break_hard", Vector3.INF, 6.0, 0.0)
+	Sfx.play("thud", Vector3.INF, 6.0, 0.0)
+	GameState.shake.emit(0.9)
+	_place_ship()
+	light.light_energy = 16.0
+	light.omni_range = 30.0
+	mi.visible = false
+	trail.emitting = false
+	var tw2 := create_tween()
+	tw2.tween_property(light, "light_energy", 0.0, 1.2)
+	tw2.tween_callback(pod.queue_free)
+
 func _on_item_dropped(item_id: String, pos: Vector3) -> void:
 	if item_id == "crystal" and not is_instance_valid(crystal) and not socket.done:
 		crystal = UsableItem.new()
@@ -458,14 +606,26 @@ func _on_item_dropped(item_id: String, pos: Vector3) -> void:
 		crystal.home = crystal.global_position
 		crystal.linear_velocity = Vector3(randf_range(-1, 1), 3.0, randf_range(-1, 1))
 		GameState.say("能量晶块！它有发光描边——有用的东西会留在场上。按{grab}抓起来。")
+		GameState.set_objective(8, "把晶块扔进中枢塔前的发光凹槽", _v(SOCKET + Vector3i.UP))
 
 ## 光桥：一格一格亮起来
-func _build_bridge() -> void:
+func _build_bridge(instant := false) -> void:
 	if bridge_built:
 		return
 	bridge_built = true
+	if instant:
+		for cell in bridge_cells:
+			if cell[1] == 0:
+				world.set_block(cell[0], Blocks.CRYSTAL)
+			else:
+				world.set_ramp(cell[0], Blocks.CRYSTAL, cell[1])
+		world.set_block(Vector3i(100, G + 2 + 13, 24), Blocks.RECEIVER_ON)
+		return
 	world.set_block(Vector3i(100, G + 2 + 13, 24), Blocks.RECEIVER_ON)
 	GameState.say("中枢塔重新上线！……光桥正在展开。终点浮岛上就是温室的能量核心。")
+	GameState.set_objective(9, "沿光桥登上终点浮岛", _v(Vector3i(104, G + 11, 81)))
+	SaveGame.set_flag("gh_bridge")
+	SaveGame.write()
 	Sfx.play("bridge", Vector3.INF, -2.0, 0.0)
 	var i := 0
 	for cell in bridge_cells:
