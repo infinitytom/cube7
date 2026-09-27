@@ -42,6 +42,7 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 	_build_stats()
+	_root.add_child(ObjectivePointer.new())
 	_build_objective()
 	_build_nova()
 	_build_forms()
@@ -49,6 +50,18 @@ func _ready() -> void:
 	_build_title_card()
 	_build_save_toast()
 	GameState.level_cleared.connect(_show_clear)
+	_build_combo()
+	GameState.combo_changed.connect(_on_combo)
+	_challenge = UIKit.outline(UIKit.label("", 30, UIKit.ACCENT, true), 10, Color("2a2c6b"))
+	UIKit.place(_challenge, Vector4(0.5, 0, 0.5, 0), Vector4(-220, 26, 220, 70))
+	_challenge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_challenge.visible = false
+	_root.add_child(_challenge)
+	GameState.challenge_changed.connect(func(active: bool, left: float, got: int, total: int) -> void:
+		_challenge.visible = active
+		_challenge.text = "限时 %.1f 秒  ·  蓝币 %d / %d" % [maxf(left, 0.0), got, total]
+		_challenge.add_theme_color_override("font_color", UIKit.DANGER if left < 5.0 else UIKit.ACCENT))
+	GameState.combo_finished.connect(_on_combo_end)
 	_pause = PauseMenu.new()
 	add_child(_pause)
 	GameState.coins_changed.connect(func(_v: int) -> void: _refresh_stats(true))
@@ -67,6 +80,57 @@ func _ready() -> void:
 	_refresh_prompts()
 	if GameState.objective_index >= 0:
 		_on_objective(GameState.objective_index, GameState.objective_text, GameState.objective_pos)
+
+# ================================================================ 连拆
+
+var _combo_box: VBoxContainer
+var _challenge: Label
+var _combo_num: Label
+var _combo_word: Label
+
+func _build_combo() -> void:
+	_combo_box = VBoxContainer.new()
+	_combo_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	UIKit.place(_combo_box, Vector4(0.5, 0, 0.5, 0), Vector4(-160, 90, 160, 200))
+	_combo_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_combo_box.modulate.a = 0.0
+	_root.add_child(_combo_box)
+	_combo_word = UIKit.outline(UIKit.label("连拆", 22, UIKit.ACCENT2, true), 8, Color("2a2c6b"))
+	_combo_word.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_combo_box.add_child(_combo_word)
+	_combo_num = UIKit.outline(UIKit.label("×0", 54, Color.WHITE, true), 12, Color("2a2c6b"))
+	_combo_num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_combo_box.add_child(_combo_num)
+
+func _on_combo(n: int) -> void:
+	if n < 3:
+		return
+	_combo_box.modulate.a = 1.0
+	_combo_num.text = "×%d" % n
+	var hot := clampf(n / 40.0, 0.0, 1.0)
+	_combo_num.add_theme_color_override("font_color", Color.WHITE.lerp(Color("ff8a5c"), hot))
+	_combo_num.pivot_offset = _combo_num.size * 0.5
+	_combo_num.scale = Vector2.ONE * (1.35 + hot * 0.3)
+	create_tween().tween_property(_combo_num, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	Sfx.play("coin", Vector3.INF, -16.0, 0.0, 1.0 + minf(n, 40) * 0.025)
+
+func _on_combo_end(n: int, bonus: int) -> void:
+	if n < 3:
+		return
+	var word := "不错！"
+	if n >= 60:
+		word = "拆迁大师！！"
+	elif n >= 30:
+		word = "太爽了！"
+	elif n >= 15:
+		word = "漂亮！"
+	_combo_word.text = word + ("  +%d 金币" % bonus if bonus > 0 else "")
+	if bonus > 0:
+		Sfx.play("success", Vector3.INF, -8.0, 0.0)
+	var tw := create_tween()
+	tw.tween_interval(1.2)
+	tw.tween_property(_combo_box, "modulate:a", 0.0, 0.4)
+	tw.tween_callback(func() -> void: _combo_word.text = "连拆")
 
 # ================================================================ 通关结算
 

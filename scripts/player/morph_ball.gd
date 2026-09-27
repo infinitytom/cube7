@@ -67,6 +67,10 @@ var _move_dir := Vector3(1, 0, 0)
 var _visual_root: Node3D
 var _visuals: Array[Node3D] = []
 var _drill_bit: Node3D
+var _drilling_t := 0.0
+var _drill_fx: CPUParticles3D
+var _bit_spin := 0.0
+var _drill_down := false
 var _magnet_stuck := false
 var _teleport := false
 var _teleport_pos := Vector3.ZERO
@@ -299,6 +303,8 @@ func _physics_process(delta: float) -> void:
 	# 锁定旋转的形态：让外观朝向移动方向
 	if lock_rotation and _visuals[form].visible:
 		var target := Basis.looking_at(_move_dir, Vector3.UP)
+		if form == DRILL and _drill_down:
+			target = target * Basis(Vector3.RIGHT, -1.35)   # 往下钻：钻头转向地面
 		_visuals[form].basis = _visuals[form].basis.slerp(target, 1.0 - exp(-12.0 * delta))
 
 ## 贴地：刚离开地面（坡顶、小台阶）时，如果正下方很近处还有地面，就压回去，
@@ -397,8 +403,7 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 				_pound_land()
 			elif held and _ground_timer > 0.0:
 				_drill_timer -= delta
-				if _drill_bit:
-					_drill_bit.rotate_object_local(Vector3.UP, delta * 30.0)
+				_drilling_t = 0.15
 				if _drill_timer <= 0.0:
 					_drill_timer = 0.09
 					_drill(dir)
@@ -528,9 +533,35 @@ func _handle_impacts() -> void:
 		var count := world.break_sphere(center, radius, "impact", speed, imp.vel)
 		if count == 0 and speed > 4.0:
 			Sfx.play("thud", global_position, linear_to_db(clampf(speed / 12.0, 0.2, 1.0)), 0.1)
+			_hardness_hint(center, speed)
 		if count >= 2:
 			# 撞穿：保留大部分速度继续前进
 			linear_velocity = (imp.vel as Vector3) * 0.8
+
+## 撞上撞不开的方块时，在撞击处飘一句提示，让玩家明白“这块为什么没碎”
+var _hint_t := 0.0
+
+func _hardness_hint(at: Vector3, speed: float) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _hint_t < 1.6:
+		return
+	var t := world.get_block(world.world_to_voxel(at))
+	if t == Blocks.AIR:
+		return
+	_hint_t = now
+	var text := ""
+	var col := Color.WHITE
+	if Blocks.impact[t] >= 0.0:
+		text = "再快一点！%d%%" % mini(int(speed / Blocks.impact[t] * 100.0), 99)
+		col = UIKit.ACCENT2
+	elif Blocks.drill[t] == 1:
+		text = "要用钻头" if not GameState.unlocked_forms[DRILL] else "换钻头钻开"
+		col = Color("ffb03b")
+	else:
+		text = "打不坏"
+		col = Color("c4c8ee")
+	FloatText.spawn(get_parent(), at + Vector3.UP * 0.6, text, col, 48)
+	set_mood("hurt", 0.4)
 
 ## 复活（由 GameState.respawn 调用）
 func respawn_at(pos: Vector3, form_idx: int, locks: bool) -> void:
@@ -637,7 +668,8 @@ func _ring(color: Color, parent: Node3D, r := 0.49) -> MeshInstance3D:
 	return _mesh(t, _mat(color, 3.0), parent)
 
 func _build_visuals() -> void:
-	var shell := Color("2b3450")
+	# 可爱的“小机器人”配色：珍珠白外壳 + 形态色的发光饰条 + 深色屏幕脸（脸在 _build_face 里）
+	var pearl := Color("f3f5ff")
 	for i in FORMS.size():
 		var root := Node3D.new()
 		root.name = FORMS[i].id
@@ -646,29 +678,99 @@ func _build_visuals() -> void:
 		var c: Color = FORMS[i].color
 		match i:
 			BALL:
-				_mesh(_sphere(0.48), _mat(shell), root)
-				_ring(c, root)
-				var r2 := _ring(c, root, 0.49)
+				_mesh(_sphere(0.48), _shell_mat(pearl), root)
+				# 上下两片彩色面板 + 一圈发光赤道环，滚起来能看清旋转
+				for sy in [1.0, -1.0]:
+					var cap := MeshInstance3D.new()
+					var cm := SphereMesh.new()
+					cm.radius = 0.485
+					cm.height = 0.97
+					cm.is_hemisphere = true
+					cap.mesh = cm
+					cap.material_override = _shell_mat(c.darkened(0.15))
+					cap.scale = Vector3(0.62, 0.35, 0.62)
+					cap.position.y = 0.335 * sy
+					if sy < 0.0:
+						cap.rotation_degrees.x = 180.0
+					root.add_child(cap)
+				_ring(c, root, 0.49)
+				var r2 := _ring(Color.WHITE, root, 0.492)
 				r2.rotation_degrees.x = 90.0
-				r2.scale = Vector3(1, 1, 1) * 0.999
+				r2.scale = Vector3.ONE * 0.999
 			DRILL:
-				_mesh(_sphere(0.44), _mat(Color("4a3a2a")), root)
+				# 橙黄色厚重机身 + 金属钻头（带螺旋刃），尾部两片小鳍
+				_mesh(_sphere(0.44), _shell_mat(Color("ffcf6b")), root)
+				var band := _ring(Color("3b3f9a"), root, 0.445)
+				band.rotation_degrees.x = 90.0
+				for sx in [-1.0, 1.0]:
+					var fin := MeshInstance3D.new()
+					var fm := BoxMesh.new()
+					fm.size = Vector3(0.06, 0.22, 0.26)
+					fin.mesh = fm
+					fin.material_override = _shell_mat(Color("3b3f9a"))
+					fin.position = Vector3(0.42 * sx, 0.12, 0.2)
+					fin.rotation_degrees.z = -20.0 * sx
+					root.add_child(fin)
 				var bit := Node3D.new()
 				bit.rotation_degrees.x = -90.0
-				bit.position = Vector3(0, 0, -0.5)
+				bit.position = Vector3(0, 0, -0.52)
 				root.add_child(bit)
 				var cone := CylinderMesh.new()
 				cone.top_radius = 0.0
 				cone.bottom_radius = 0.3
-				cone.height = 0.6
-				cone.radial_segments = 8
-				_mesh(cone, _mat(c, 1.2), bit)
+				cone.height = 0.62
+				cone.radial_segments = 16
+				var steel := StandardMaterial3D.new()
+				steel.albedo_color = Color("dfe4f5")
+				steel.metallic = 0.85
+				steel.roughness = 0.25
+				_mesh(cone, steel, bit)
+				# 螺旋刃：几片斜着的薄板，转起来一眼就是“钻头”
+				for k in 3:
+					var blade := MeshInstance3D.new()
+					var bm := BoxMesh.new()
+					bm.size = Vector3(0.05, 0.42, 0.14)
+					blade.mesh = bm
+					blade.material_override = _shell_mat(c)
+					var ang := k * TAU / 3.0
+					blade.position = Vector3(cos(ang) * 0.13, -0.05, sin(ang) * 0.13)
+					blade.rotation = Vector3(0.0, -ang, 0.45)
+					bit.add_child(blade)
+				var collar := _ring(c, bit, 0.3)
+				collar.position.y = -0.3
 				_drill_bit = bit
-				var ring := _ring(c, root, 0.45)
-				ring.rotation_degrees.x = 90.0
 			BUBBLE:
-				_mesh(_sphere(0.5), _mat(c, 0.4, 0.35), root)
-				_mesh(_sphere(0.16), _mat(c, 3.0), root)
+				var bub := StandardMaterial3D.new()
+				bub.albedo_color = Color(c, 0.3)
+				bub.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				bub.roughness = 0.05
+				bub.metallic = 0.2
+				bub.rim_enabled = true
+				bub.rim = 1.0
+				bub.rim_tint = 0.2
+				bub.emission_enabled = true
+				bub.emission = c
+				bub.emission_energy_multiplier = 0.25
+				_mesh(_sphere(0.5), bub, root)
+				# 泡泡里漂着一颗珍珠白的小核心 + 两个小气泡
+				var core := _mesh(_sphere(0.2), _shell_mat(pearl), root)
+				core.name = "Core"
+				for k in 2:
+					var sb := _mesh(_sphere(0.06 + k * 0.03), _mat(Color.WHITE, 1.5, 0.6), root)
+					sb.position = Vector3(0.22 - k * 0.4, 0.18 + k * 0.1, 0.1)
+
+func _shell_mat(c: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.roughness = 0.28
+	m.metallic = 0.05
+	m.clearcoat_enabled = true
+	m.clearcoat = 0.6
+	m.clearcoat_roughness = 0.2
+	m.rim_enabled = true
+	m.rim = 0.35
+	m.rim_tint = 0.5
+	return m
 
 func _burst(color: Color) -> void:
 	var ps := CPUParticles3D.new()
@@ -708,6 +810,8 @@ var _mood := ""
 var _mood_t := 0.0
 var _face_dir := Vector3(1, 0, 0)
 var _idle_t := 0.0
+var _antenna: Node3D
+var _antenna_sway := Vector2.ZERO
 
 func _build_face() -> void:
 	_face = Node3D.new()
@@ -746,6 +850,29 @@ func _build_face() -> void:
 		e.rotation_degrees.x = -12.0
 		_face.add_child(e)
 		_eyes.append(e)
+	# 头顶的小天线：会随着运动晃来晃去
+	_antenna = Node3D.new()
+	_antenna.position = Vector3(0, 0.47, 0.06)
+	_face.add_child(_antenna)
+	var stalk := MeshInstance3D.new()
+	var sm := CylinderMesh.new()
+	sm.top_radius = 0.012
+	sm.bottom_radius = 0.018
+	sm.height = 0.2
+	stalk.mesh = sm
+	stalk.position.y = 0.1
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = Color("3b3f9a")
+	stalk.material_override = smat
+	_antenna.add_child(stalk)
+	var tip := MeshInstance3D.new()
+	var tm := SphereMesh.new()
+	tm.radius = 0.045
+	tm.height = 0.09
+	tip.mesh = tm
+	tip.material_override = _eye_mat
+	tip.position.y = 0.22
+	_antenna.add_child(tip)
 	GameState.coins_changed.connect(func(_v: int) -> void: set_mood("happy", 0.5))
 	GameState.shield_changed.connect(func(_v: int) -> void:
 		if _invuln > 0.0:
@@ -760,6 +887,7 @@ func set_mood(m: String, secs: float) -> void:
 	_mood_t = secs
 
 func _process(delta: float) -> void:
+	_update_drill_visual(delta)
 	if _face == null:
 		return
 	# 面朝前进方向（慢慢转过去），停下时也保持最后的朝向
@@ -783,6 +911,12 @@ func _process(delta: float) -> void:
 		fb = fb * Basis(Vector3.RIGHT, 0.65)   # 钻头朝前，脸往上挪一点
 	_face.global_transform = Transform3D(fb.scaled(Vector3.ONE * r), origin)
 	_face.visible = _visual_root.visible
+	# 天线：被加速度甩向后方，再弹回来
+	if _antenna:
+		var local_v := fb.inverse() * linear_velocity
+		var want := Vector2(clampf(-local_v.z * 0.06, -0.6, 0.6), clampf(local_v.x * 0.06, -0.6, 0.6))
+		_antenna_sway = _antenna_sway.lerp(want, 1.0 - exp(-6.0 * delta))
+		_antenna.rotation = Vector3(-_antenna_sway.x, 0.0, -_antenna_sway.y + sin(Time.get_ticks_msec() * 0.004) * 0.05)
 	# 眨眼
 	_blink_t -= delta
 	var open := 1.0
@@ -806,3 +940,58 @@ func _process(delta: float) -> void:
 			_:
 				e.scale = Vector3(1.0, open, 1.0)
 				e.rotation_degrees.z = 0.0
+
+
+# ---------------------------------------------------------------- 钻头动作
+## 钻的时候：钻头高速旋转、机身嗡嗡震动、钻尖喷火花和碎土；静止往下钻时钻头朝下
+
+func _update_drill_visual(delta: float) -> void:
+	if _drill_bit == null:
+		return
+	_drilling_t -= delta
+	var drilling := form == DRILL and _drilling_t > 0.0
+	var moving := Vector3(linear_velocity.x, 0, linear_velocity.z).length()
+	var target_spin := 40.0 if drilling else (moving * 3.0 + 1.5)
+	_bit_spin = lerpf(_bit_spin, target_spin, 1.0 - exp(-8.0 * delta))
+	_drill_bit.rotate_object_local(Vector3.UP, _bit_spin * delta)
+	# 往下钻：钻头慢慢转到下方
+	var down := drilling and _move_input().length() < 0.15
+	var droot := _visuals[DRILL]
+	_drill_down = down
+	# 机身震动
+	if drilling:
+		droot.position = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.025
+	else:
+		droot.position = droot.position.lerp(Vector3.ZERO, 0.3)
+	# 火花与碎土
+	if _drill_fx == null:
+		_drill_fx = CPUParticles3D.new()
+		var m := BoxMesh.new()
+		m.size = Vector3.ONE * 0.06
+		var mat := StandardMaterial3D.new()
+		mat.vertex_color_use_as_albedo = true
+		mat.emission_enabled = true
+		mat.emission = Color("ffb03b")
+		mat.emission_energy_multiplier = 1.5
+		m.material = mat
+		_drill_fx.mesh = m
+		_drill_fx.amount = 24
+		_drill_fx.lifetime = 0.35
+		_drill_fx.spread = 50.0
+		_drill_fx.initial_velocity_min = 2.5
+		_drill_fx.initial_velocity_max = 5.0
+		_drill_fx.gravity = Vector3(0, -12, 0)
+		_drill_fx.scale_amount_min = 0.5
+		_drill_fx.scale_amount_max = 1.3
+		var g := Gradient.new()
+		g.set_color(0, Color("fff2a8"))
+		g.set_color(1, Color("c97b5a"))
+		_drill_fx.color_ramp = g
+		_drill_fx.local_coords = false
+		_drill_fx.emitting = false
+		add_child(_drill_fx)
+	_drill_fx.emitting = drilling
+	if drilling:
+		var tip := _drill_bit.global_transform * Vector3(0, 0.35, 0)
+		_drill_fx.global_position = tip
+		_drill_fx.direction = (global_position - tip).normalized() + Vector3.UP * 0.6

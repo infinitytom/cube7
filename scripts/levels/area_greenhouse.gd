@@ -79,8 +79,9 @@ func build() -> void:
 	_pylon_and_bridge()
 	_fences()
 	world.rebuild_all()
-	scatter_decor(Vector3i(0, G - 3, 0), Vector3i(SIZE.x - 1, G + 12, SIZE.z - 1), 0.28, 0.07)
+	scatter_decor(Vector3i(0, G - 3, 0), Vector3i(SIZE.x - 1, G + 12, SIZE.z - 1), 0.28, 0.07, 0.03)
 	decor.commit()
+	_dress()
 	if backdrop:
 		return
 	_logic()
@@ -89,6 +90,67 @@ func build() -> void:
 	Music.set_override("")
 	Music.play_area("gh")
 	GameState.set_checkpoint(spawn_position())
+
+# ================================================================ 布景：让浮岛“有人住过”
+
+func _dress() -> void:
+	# 坠毁坑边上的考察营地：集装箱、控制台、全息星图桌
+	deco("space-station/container-tall", 24, 63, 1.6)
+	deco("space-station/container", 28, 62, 1.2)
+	deco("space-station/computer-screen", 21, 64, 0.9)
+	deco("space-station/table-display-planet", 30, 66, 0.9)
+	deco("space-station/chair", 22, 67, 0.7, "none")
+	# 温室高台：机械臂和扫描仪（以前的研究设备）
+	deco("factory/robot-arm-a", 56, 46, 1.8)
+	deco("factory/scanner-high", 72, 44, 1.6)
+	deco("factory/screen-wide", 60, 58, 1.2)
+	# 重构塔台地：发电机、齿轮
+	deco("factory/machine", 101, 40, 1.4)
+	deco("factory/cog-a", 90, 38, 0.8, "none")
+	deco("space-station/container-wide", 104, 30, 1.2)
+	# 成片的树林（边缘和角落），让岛看起来是“长满了”的
+	for c in [Vector2i(30, 61), Vector2i(48, 85), Vector2i(35, 86), Vector2i(70, 80), Vector2i(80, 70),
+			Vector2i(58, 38), Vector2i(86, 62), Vector2i(8, 60), Vector2i(20, 88), Vector2i(76, 36), Vector2i(110, 50)]:
+		for k in 4:
+			var cell := find_flat(c.x + rng.randi_range(-3, 3), c.y + rng.randi_range(-3, 3), 3, 1)
+			if cell.y >= 0 and world.get_block(cell) == Blocks.AIR:
+				prop(Kit.TREES[rng.randi() % Kit.TREES.size()], cell, rng.randf_range(2.2, 3.8), true, 2, "trunk")
+	# 花丛边的蝴蝶
+	var amb := Ambient.new()
+	amb.area_lo = Vector3(20, G + 1, 58) * VoxelWorld.VOXEL
+	amb.area_hi = Vector3(110, G + 10, 88) * VoxelWorld.VOXEL
+	amb.count = 22
+	add_child(amb)
+
+## 玩具：加速板、弹簧与空中小岛、限时蓝币挑战
+func _toys() -> void:
+	# 坡道底下的加速板：借着速度冲上高台、撞碎温室玻璃
+	zone(SpeedPad, Vector3i(63, G, 72), Vector3i(66, G + 1, 73), {"dir": Vector3(0, 0, -1), "speed": 14.0})
+	# 花园里的弹簧 → 空中小岛（上面有一圈金币）
+	var sp := find_flat(40, 80, 5, 3)
+	if sp.y >= 0:
+		zone(BouncePad, sp + Vector3i(-1, 0, -1), sp + Vector3i(1, 1, 1), {"launch": Vector3(0, 12.6, 2.2)})
+		var top := sp.y + 9
+		world.fill_box(Vector3i(sp.x - 3, top - 2, sp.z + 3), Vector3i(sp.x + 3, top - 1, sp.z + 9), Blocks.DIRT)
+		world.fill_box(Vector3i(sp.x - 3, top, sp.z + 3), Vector3i(sp.x + 3, top, sp.z + 9), Blocks.GRASS)
+		world.fill_box(Vector3i(sp.x - 2, top - 3, sp.z + 4), Vector3i(sp.x + 2, top - 3, sp.z + 8), Blocks.DIRT)
+		for k in 8:
+			var a := k * TAU / 8.0
+			coin(Vector3i(sp.x + roundi(cos(a) * 2.0), top + 1, sp.z + 6 + roundi(sin(a) * 2.0)))
+		prop("platformer/flowers-tall", Vector3i(sp.x, top + 1, sp.z + 6), 0.7, true, 3, "none", "break_soft")
+		talk(sp + Vector3i(-2, 0, -2), sp + Vector3i(2, 3, 2), ["弹簧！滚上去试试——上面那座小岛好像藏着什么。"])
+	# 限时蓝币挑战
+	var bt := find_flat(33, 69, 5, 3)
+	if bt.y >= 0:
+		var ch := zone(CoinChallenge, bt + Vector3i(-1, 0, -1), bt + Vector3i(1, 1, 1), {"time_limit": 16.0}) as CoinChallenge
+		var offs := [Vector2i(6, 0), Vector2i(9, 5), Vector2i(6, 10), Vector2i(0, 13), Vector2i(-5, 10), Vector2i(-7, 4), Vector2i(-4, -4), Vector2i(3, -6)]
+		for o in offs:
+			var cx: int = bt.x + o.x
+			var cz: int = bt.z + o.y
+			var h := surface_y(cx, cz)
+			if h > 0:
+				ch.coin_positions.append(world.voxel_center(Vector3i(cx, h, cz)) + Vector3.UP * 0.3)
+		ch.chest_position = world.voxel_top(bt + Vector3i(0, -1, -3))
 
 # ================================================================ 地形
 
@@ -504,6 +566,7 @@ func _logic() -> void:
 	_objective(4, "拿到温室中央的能量核心", DOME_C + Vector3i(0, 1, 0), Vector3i(55, G + 6, 27), Vector3i(73, G + 12, 45))
 	_objective(6, "找到通往重构塔的路（试试往下钻）", Vector3i(91, G + 6, 51), Vector3i(83, G + 6, 50), Vector3i(86, G + 9, 54))
 	_objective(7, "为重构塔找一块能量晶块（西边的岩丘）", Vector3i(92, G + 5, 21), Vector3i(90, G + 2, 30), Vector3i(100, G + 6, 42))
+	_toys()
 	# 种子方块（被封存的噗噗）：一个在显眼处教学，两个藏在需要探索的地方
 	_seed("gh_s1", 30, 80, 0)
 	_seed("gh_s2", 72, 30, 1)

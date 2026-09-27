@@ -115,7 +115,7 @@ func _build_hero() -> void:
 	_hero = Node3D.new()
 	_cam.add_child(_hero)
 	var shell := StandardMaterial3D.new()
-	shell.albedo_color = Color("2b3450")
+	shell.albedo_color = Color("f3f5ff")
 	shell.roughness = 0.25
 	shell.metallic = 0.5
 	shell.rim_enabled = true
@@ -287,7 +287,7 @@ func _build_ui() -> void:
 	_ui.add_child(_hints)
 	_refresh_glyphs()
 	# 版本号
-	var ver := UIKit.label("原型 v0.7  ·  第一章", 15, Color(1, 1, 1, 0.45))
+	var ver := UIKit.label("原型 v0.8  ·  第一章", 15, Color(1, 1, 1, 0.45))
 	UIKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-280, -52, -40, -26))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ui.add_child(ver)

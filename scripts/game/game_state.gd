@@ -12,6 +12,8 @@ signal level_cleared
 signal form_unlocked(index: int)
 signal fragments_changed(value: int)
 signal seeds_changed(value: int)
+@warning_ignore("unused_signal")
+signal challenge_changed(active: bool, time_left: float, got: int, total: int)
 signal objective_changed(index: int, text: String, pos: Vector3)
 @warning_ignore("unused_signal")
 signal shake(amount: float)
@@ -24,9 +26,38 @@ var shield := 3
 var max_shield := 3
 var blocks_broken := 0:
 	set(v):
+		if v > blocks_broken:
+			_combo_hit(v - blocks_broken)
 		blocks_broken = v
 		if v == 80:
 			say("你是拆迁队吗？……好吧，拆得还挺专业。")
+
+# ---------------------------------------------------------------- 连拆（连击）
+## 1.6 秒内不停地拆东西会累积“连拆”，断掉时按连击数奖励金币——拆得越爽，拿得越多
+signal combo_changed(count: int)
+signal combo_finished(count: int, bonus: int)
+const COMBO_WINDOW := 1.6
+var combo := 0
+var _combo_t := 0.0
+
+func _combo_hit(n: int) -> void:
+	combo += n
+	_combo_t = COMBO_WINDOW
+	combo_changed.emit(combo)
+
+func add_combo(n: int) -> void:
+	_combo_hit(n)
+
+func _process(delta: float) -> void:
+	if combo > 0:
+		_combo_t -= delta
+		if _combo_t <= 0.0:
+			var bonus := 0
+			if combo >= 8:
+				bonus = combo / 4 + (10 if combo >= 30 else 0) + (25 if combo >= 60 else 0)
+				add_coins(bonus)
+			combo_finished.emit(combo, bonus)
+			combo = 0
 var player: Node3D
 var camera: Node3D
 var seeds := 0                      ## 本章救出的噗噗（打开的种子方块）

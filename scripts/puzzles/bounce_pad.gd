@@ -6,15 +6,24 @@ extends Zone
 var _pad: MeshInstance3D
 var _cool := 0.0
 
+var _spring: Node3D
+
 func _build() -> void:
+	# Kenney 弹簧：被踩下时压扁再弹起
+	_spring = Kit.model("platformer/spring")
+	var b := Kit.bounds(_spring)
+	var s := minf(box_size.x, box_size.z) * 0.8 / maxf(b.size.x, b.size.z)
+	_spring.scale = Vector3.ONE * s
+	_spring.position.y = -box_size.y * 0.5 - b.position.y * s
+	add_child(_spring)
 	_pad = MeshInstance3D.new()
 	var cm := CylinderMesh.new()
-	cm.top_radius = minf(box_size.x, box_size.z) * 0.45
+	cm.top_radius = minf(box_size.x, box_size.z) * 0.5
 	cm.bottom_radius = cm.top_radius
-	cm.height = 0.1
-	cm.material = _glow_mat(Color("ff7bd5"), 1.5)
+	cm.height = 0.02
+	cm.material = _glow_mat(Color("ff9ad5"), 0.8, 0.5)
 	_pad.mesh = cm
-	_pad.position.y = -box_size.y * 0.5 + 0.06
+	_pad.position.y = -box_size.y * 0.5 + 0.02
 	add_child(_pad)
 
 func _physics_process(delta: float) -> void:
@@ -30,5 +39,6 @@ func _physics_process(delta: float) -> void:
 			GameState.shake.emit(0.1)
 			Sfx.play("boing", global_position, -3.0)
 			var tw := create_tween()
-			_pad.scale = Vector3(1.3, 1, 1.3)
-			tw.tween_property(_pad, "scale", Vector3.ONE, 0.3)
+			var base := _spring.scale
+			_spring.scale = Vector3(base.x * 1.3, base.y * 0.5, base.z * 1.3)
+			tw.tween_property(_spring, "scale", base, 0.35).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)

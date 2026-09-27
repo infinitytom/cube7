@@ -49,10 +49,32 @@ func _run() -> void:
 	await get_tree().create_timer(1.5).timeout
 	if main.level is AreaGreenhouse and OS.get_cmdline_user_args().has("--quick"):
 		var G := AreaGreenhouse.G
+		await aerial("q00_overview", Vector3(-15, 55, 120), Vector3(55, 18, 55), 2.5)
+		await aerial("q00_garden", Vector3(20, 34, 96), Vector3(40, 20, 72), 1.0)
 		var e: Node3D = main.level.enemies[0]
 		var ev := W.world_to_voxel(e.global_position)
 		await shot("q01_enemy", ev + Vector3i(-7, 1, 3), -PI / 2.0 + 0.35, -0.3, false, 2.5)
 		await shot("q02_pipe", Vector3i(46, G, 76), -PI / 2.0 + 0.3, -0.22, false, 2.0)
+		# 角色特写：三种形态（自由机位对着主角）
+		for fi in [MorphBall.BALL, MorphBall.DRILL, MorphBall.BUBBLE]:
+			P.apply_form(fi, false)
+			P.debug_override = true
+			P.teleport(W.voxel_top(Vector3i(36, G - 1, 76)) + Vector3.UP * 0.5)
+			await get_tree().create_timer(1.8).timeout
+			var pv := P.global_position / VoxelWorld.VOXEL
+			await aerial("q03_pix_%d" % fi, pv + Vector3(-3.5, 1.6, 3.0), pv + Vector3(0, 0.3, 0), 0.4)
+		# 钻头工作中：朝泥土墙钻
+		P.apply_form(MorphBall.DRILL, false)
+		P.teleport(W.voxel_top(Vector3i(73, G + 5, 52)) + Vector3.UP * 0.5)
+		await get_tree().create_timer(0.5).timeout
+		P.debug_input = Vector2(0, -1)
+		P.debug_ability = true
+		await get_tree().create_timer(0.9).timeout
+		var dv := P.global_position / VoxelWorld.VOXEL
+		await aerial("q04_drilling", dv + Vector3(-2.5, 2.5, 5.0), dv, 0.2)
+		P.debug_ability = false
+		P.debug_input = Vector2.ZERO
+		cam.distance = 7.0
 		P.debug_override = false
 		get_tree().quit()
 		return

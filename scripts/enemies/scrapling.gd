@@ -335,6 +335,7 @@ func _defeat(drops: bool) -> void:
 	Sfx.play("enemy_defeat", global_position, 0.0, 0.08)
 	GameState.shake.emit(0.2)
 	GameState.enemies_defeated += 1
+	GameState.add_combo(5)
 	if drops:
 		var w := get_tree().get_first_node_in_group("voxel_world")
 		var parent: Node = w if w else get_parent()

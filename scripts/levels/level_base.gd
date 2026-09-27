@@ -53,6 +53,45 @@ func coin_line(a: Vector3i, b: Vector3i, n: int) -> void:
 		var p := Vector3(a).lerp(Vector3(b), t)
 		coin(Vector3i(roundi(p.x), roundi(p.y), roundi(p.z)))
 
+## 地表高度：列 (x, z) 最高的实心方块上方那一格的 y（没有地面返回 -1）
+func surface_y(x: int, z: int) -> int:
+	for y in range(world.size.y - 2, -1, -1):
+		if world.get_block(Vector3i(x, y, z)) != Blocks.AIR:
+			return y + 1 if world.get_shape(Vector3i(x, y, z)) == 0 else -1
+	return -1
+
+## 在 (x, z) 附近找一块 w×w 的平地，返回地面上方那一格；找不到返回 (-1,-1,-1)
+func find_flat(x: int, z: int, rad := 5, w := 3) -> Vector3i:
+	for r in range(0, rad + 1):
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dz)) != r:
+					continue
+				var cx := x + dx
+				var cz := z + dz
+				var h := surface_y(cx, cz)
+				if h < 0:
+					continue
+				var ok := true
+				var half := w / 2
+				for oz in range(-half, half + 1):
+					for ox in range(-half, half + 1):
+						if surface_y(cx + ox, cz + oz) != h:
+							ok = false
+				if ok:
+					return Vector3i(cx, h, cz)
+	return Vector3i(-1, -1, -1)
+
+## 一个不会被撞飞的装饰物件（营地的箱子、设备……）
+func deco(path: String, x: int, z: int, height_m: float, solid := "box", yaw := INF) -> Prop:
+	var c := find_flat(x, z, 4, 3)
+	if c.y < 0:
+		return null
+	var p := prop(path, c, height_m, false, 0, solid)
+	if yaw != INF:
+		p.rotation.y = yaw
+	return p
+
 ## 一棵树（Kenney 模型，可以撞飞）。h / r 沿用体素树的参数，换算成大致高度
 func tree(base: Vector3i, h: int, r: float) -> Prop:
 	var hm := h * VoxelWorld.VOXEL + r * 0.6

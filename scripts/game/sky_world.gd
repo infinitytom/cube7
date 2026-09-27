@@ -22,6 +22,7 @@ func _ready() -> void:
 	sea.position = Vector3(center.x, sea_height, center.z)
 	sea.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(sea)
+	_build_far_islands()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
 	var mat := StandardMaterial3D.new()
@@ -57,7 +58,64 @@ func _ready() -> void:
 		_clouds.append(puff)
 		_speeds.append(rng.randf_range(0.3, 0.8))
 
+## 远处的小浮岛：草顶 + 倒锥形的土台 + 几棵树，缓缓上下浮动，给天空加上纵深
+var _islands: Array[Node3D] = []
+
+func _build_far_islands() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	var grass := StandardMaterial3D.new()
+	grass.albedo_color = Color("66daa3")
+	grass.roughness = 0.9
+	var dirt := StandardMaterial3D.new()
+	dirt.albedo_color = Color("d88a6c")
+	dirt.roughness = 0.9
+	for i in 9:
+		var root := Node3D.new()
+		add_child(root)
+		var ang := rng.randf() * TAU
+		var dist := rng.randf_range(75.0, 150.0)
+		var r := rng.randf_range(3.0, 8.0)
+		root.position = center + Vector3(cos(ang) * dist, rng.randf_range(4.0, 26.0), sin(ang) * dist)
+		var top := MeshInstance3D.new()
+		var tm := CylinderMesh.new()
+		tm.top_radius = r
+		tm.bottom_radius = r * 1.02
+		tm.height = r * 0.25
+		tm.radial_segments = 7
+		tm.rings = 1
+		top.mesh = tm
+		top.material_override = grass
+		root.add_child(top)
+		var cone := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = r * 1.0
+		cm.bottom_radius = r * 0.12
+		cm.height = r * 1.6
+		cm.radial_segments = 7
+		cm.rings = 2
+		cone.mesh = cm
+		cone.material_override = dirt
+		cone.position.y = -r * 0.92
+		root.add_child(cone)
+		for k in rng.randi_range(1, 4):
+			var tree := Kit.model(Kit.TREES[rng.randi() % Kit.TREES.size()])
+			var b := Kit.bounds(tree)
+			var s := rng.randf_range(2.5, 4.5) / maxf(b.size.y, 0.01)
+			tree.scale = Vector3.ONE * s
+			var ta := rng.randf() * TAU
+			var td := rng.randf_range(0.0, r * 0.6)
+			tree.position = Vector3(cos(ta) * td, r * 0.125 - b.position.y * s, sin(ta) * td)
+			root.add_child(tree)
+		root.rotation.y = rng.randf() * TAU
+		root.set_meta("base_y", root.position.y)
+		root.set_meta("phase", rng.randf() * TAU)
+		_islands.append(root)
+
 func _process(delta: float) -> void:
+	var tt := Time.get_ticks_msec() / 1000.0
+	for isl in _islands:
+		isl.position.y = float(isl.get_meta("base_y")) + sin(tt * 0.3 + float(isl.get_meta("phase"))) * 0.8
 	for i in _clouds.size():
 		var c := _clouds[i]
 		c.position.x += _speeds[i] * delta

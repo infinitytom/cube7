@@ -16,3 +16,8 @@
 
 ## 自制
 - 体素地形、主角 PIX、锈块兽、所有界面、配乐与音效：本项目自制（tools/synth*.py 程序合成）
+
+## 配乐乐器采样 —— FluidR3_GM（Creative Commons Attribution 3.0）
+- 作者：Frank Wen · FluidR3_GM SoundFont
+- 使用 gleitz/midi-js-soundfonts 预渲染的单音采样（钢片琴、竖琴、弦乐、暖垫、长笛、大提琴、原声贝斯、电钢琴、颤音琴、拨弦、木鱼）
+- 曲子为本项目原创编曲，由 tools/synth3.py 程序化编排、混音

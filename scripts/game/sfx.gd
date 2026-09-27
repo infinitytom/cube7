@@ -13,7 +13,7 @@ func _stream(n: String) -> AudioStream:
 		_cache[n] = load("res://audio/sfx/%s.ogg" % n)
 	return _cache[n]
 
-func play(n: String, pos := Vector3.INF, volume_db := 0.0, pitch_var := 0.08) -> void:
+func play(n: String, pos := Vector3.INF, volume_db := 0.0, pitch_var := 0.08, pitch := 1.0) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(_last.get(n, -10.0)) < MIN_GAP:
 		return
@@ -26,7 +26,7 @@ func play(n: String, pos := Vector3.INF, volume_db := 0.0, pitch_var := 0.08) ->
 		var p2 := AudioStreamPlayer.new()
 		p2.stream = s
 		p2.volume_db = volume_db
-		p2.pitch_scale = 1.0 + randf_range(-pitch_var, pitch_var)
+		p2.pitch_scale = pitch + randf_range(-pitch_var, pitch_var)
 		p2.bus = "SFX"
 		p = p2
 		add_child(p2)
@@ -38,7 +38,7 @@ func play(n: String, pos := Vector3.INF, volume_db := 0.0, pitch_var := 0.08) ->
 		p3.volume_db = volume_db
 		p3.unit_size = 8.0
 		p3.max_distance = 60.0
-		p3.pitch_scale = 1.0 + randf_range(-pitch_var, pitch_var)
+		p3.pitch_scale = pitch + randf_range(-pitch_var, pitch_var)
 		p3.bus = "SFX"
 		p = p3
 		add_child(p3)
