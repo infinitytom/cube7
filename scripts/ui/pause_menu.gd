@@ -119,7 +119,7 @@ func _show_controls() -> void:
 	v.add_child(UIKit.label("操作说明", 34, UIKit.TEXT, true))
 	var dev: String = {"ps": "PS5 手柄", "xbox": "Xbox 手柄", "kbm": "键盘鼠标"}[GameState.device]
 	v.add_child(UIKit.label("当前设备：" + dev + "（会随你使用的设备自动切换）", 18, UIKit.DIM))
-	for pair in [["move", "移动"], ["camera", "转动镜头"], ["ability", "形态能力"], ["boost", "加速"], ["grab", "抓取 / 投掷"],
+	for pair in [["move", "移动"], ["camera", "转动镜头"], ["jump", "跳跃（三种形态跳法不同）"], ["ability", "形态能力 / 攻击"], ["boost", "加速"], ["grab", "抓取 / 投掷"],
 			["form", "切换形态"], ["form_direct", "直接选择形态"], ["view_toggle", "俯视全景"], ["respawn", "回到检查点"]]:
 		v.add_child(UIKit.prompt(pair[0], pair[1], 22))
 	v.add_child(UIKit.label("按确认或返回键关闭", 16, UIKit.DIM))

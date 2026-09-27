@@ -14,6 +14,9 @@ func _ready() -> void:
 	W = main.world
 	L = main.level
 	P.debug_override = true
+	# 关卡里的锈块兽会干扰前面的路线测试，先移走；战斗测试时再单独放
+	if L.scrap and is_instance_valid(L.scrap):
+		L.scrap.queue_free()
 	_run()
 
 func check(cond: bool, msg: String) -> void:
@@ -114,13 +117,39 @@ func _run() -> void:
 	check(count_type(Vector3i(80, 4, 28), Vector3i(81, 9, 35), Blocks.DOOR) == 0, "能量门打开")
 	check(W.get_block(Vector3i(78, 3, 31)) == Blocks.RECEIVER_ON, "接收器变为通电状态")
 
-	# 8. 磁铁攀爬金属墙
-	await tp(Vector3i(64, 4, 41), Vector3.ZERO, MorphBall.MAGNET)
-	P.debug_ability = true
-	P.debug_input = Vector2(1, 0)   # 调试输入中 +Z 为右，即推向墙
-	await wait(3.0)
-	check(P.global_position.y > 5.0, "磁铁吸附爬墙，高度 %.1f m" % P.global_position.y)
-	P.debug_ability = false
+	# 8. 三种形态跳跃高度不同；气泡能用空中再跳登上 3 米高台，滚球不行
+	var heights: Array = []
+	for fi in [MorphBall.BALL, MorphBall.DRILL, MorphBall.BUBBLE]:
+		await tp(Vector3i(71, 4, 40), Vector3.ZERO, fi)
+		await wait(0.5)
+		var y0 := P.global_position.y
+		var top := y0
+		P.debug_jump_held = true
+		P.debug_jump_pressed = true
+		for k in 90:
+			await get_tree().physics_frame
+			top = maxf(top, P.global_position.y)
+		P.debug_jump_held = false
+		heights.append(top - y0)
+		await wait(1.5)
+	check(heights[2] > heights[0] and heights[0] > heights[1] and heights[1] > 0.3, "跳跃高度：滚球 %.2f m，钻头 %.2f m，气泡 %.2f m" % heights)
+	await tp(Vector3i(64, 4, 41), Vector3.ZERO, MorphBall.BALL)
+	P.debug_input = Vector2(1, 0)
+	P.debug_jump_held = true
+	P.debug_jump_pressed = true
+	await wait(2.0)
+	check(P.global_position.y < 3.5, "滚球跳不上 3 米高台（y=%.1f）" % P.global_position.y)
+	await tp(Vector3i(64, 4, 41), Vector3.ZERO, MorphBall.BUBBLE)
+	P.debug_input = Vector2(1, 0)
+	P.debug_jump_held = true
+	P.debug_jump_pressed = true
+	await wait(0.55)
+	P.debug_jump_pressed = true
+	await wait(0.5)
+	P.debug_jump_pressed = true
+	await wait(2.5)
+	check(P.global_position.y > 5.2, "气泡空中再跳登上高台（y=%.1f）" % P.global_position.y)
+	P.debug_jump_held = false
 	P.debug_input = Vector2.ZERO
 
 	# 9. 气泡被上升气流吹起，滚球不会
@@ -131,16 +160,16 @@ func _run() -> void:
 	await wait(2.5)
 	check(ball_y < 3.0 and P.global_position.y > 5.0, "气流：滚球 %.1f m，气泡 %.1f m" % [ball_y, P.global_position.y])
 
-	# 10. 压力板：滚球压不动，立方压得动
+	# 10. 压力板：滚球压不动，钻头压得动
 	await tp(Vector3i(85, 4, 31), Vector3.ZERO, MorphBall.BALL)
 	await wait(1.0)
 	check(not L.plate.done, "滚球压不动压力板")
-	await tp(Vector3i(85, 4, 31), Vector3.ZERO, MorphBall.CUBE)
+	await tp(Vector3i(85, 4, 31), Vector3.ZERO, MorphBall.DRILL)
 	await wait(1.0)
-	check(L.plate.done and count_type(Vector3i(90, 4, 28), Vector3i(91, 9, 35), Blocks.GATE) == 0, "立方压下压力板，闸门打开")
+	check(L.plate.done and count_type(Vector3i(90, 4, 28), Vector3i(91, 9, 35), Blocks.GATE) == 0, "钻头压下压力板，闸门打开")
 
 	# 11. 平衡轨道：变形站锁定形态、球能停在轨道上
-	await tp(Vector3i(94, 4, 31), Vector3.ZERO, MorphBall.CUBE)
+	await tp(Vector3i(94, 4, 31), Vector3.ZERO, MorphBall.DRILL)
 	await wait(0.8)
 	check(P.form == MorphBall.BALL and P.form_locked, "变形站切换为滚球并锁定形态")
 	await tp(Vector3i(97, 4, 31))
@@ -154,9 +183,81 @@ func _run() -> void:
 	await wait(3.0)
 	check(P.global_position.y > 1.5 and P.global_position.x > 45.0, "掉落后回到轨道检查点 (%.1f, %.1f, %.1f)" % [P.global_position.x, P.global_position.y, P.global_position.z])
 
+	await _enemy_tests()
+
 	print("===== 金币 %d · 能源 %d · 护盾 %d · 破坏方块 %d =====" % [GameState.coins, GameState.energy, GameState.shield, GameState.blocks_broken])
 	if fails.is_empty():
 		print("===== 自动测试全部通过 =====")
 	else:
 		print("===== 失败 %d 项：%s =====" % [fails.size(), ", ".join(fails)])
 	get_tree().quit(0 if fails.is_empty() else 1)
+
+
+# ================================================================ 战斗
+
+func _enemy(cell: Vector3i, yaw: float, ai := false) -> Scrapling:
+	var e := Scrapling.new()
+	e.ai = ai
+	L.add_child(e)
+	e.global_position = W.voxel_top(cell) + Vector3.UP * 0.05
+	e.rotation.y = yaw
+	await wait(0.3)
+	return e
+
+func _enemy_tests() -> void:
+	print("  —— 战斗 ——")
+	# a. 正面冲撞被盾弹开（敌人面朝 -X，玩家从 -X 方向冲过来）
+	var e := await _enemy(Vector3i(44, 3, 26), PI / 2.0)
+	await tp(Vector3i(39, 4, 26), Vector3.ZERO, MorphBall.BALL)
+	P.debug_input = Vector2(0, -1)
+	await wait(0.1)
+	P.debug_ability_pressed = true
+	await wait(0.25)
+	P.debug_input = Vector2.ZERO
+	await wait(1.0)
+	check(is_instance_valid(e) and P.global_position.x < e.global_position.x, "滚球正面冲撞被盾牌弹开")
+	# b. 从侧面冲撞击破
+	var c0 := GameState.coins
+	await tp(Vector3i(44, 4, 20), Vector3.ZERO, MorphBall.BALL)
+	P.debug_input = Vector2(1, 0)
+	await wait(0.1)
+	P.debug_ability_pressed = true
+	await wait(1.2)
+	P.debug_input = Vector2.ZERO
+	await wait(1.0)
+	check(not is_instance_valid(e) and GameState.coins > c0, "从侧面冲撞击破锈块兽，掉出金币（+%d）" % (GameState.coins - c0))
+	# c. 钻头空中下砸把它震翻，滚球轻碰即碎
+	e = await _enemy(Vector3i(44, 3, 26), PI / 2.0)
+	P.apply_form(MorphBall.DRILL, false)
+	P.teleport(W.voxel_center(Vector3i(48, 9, 26)))
+	await wait(0.15)
+	P.debug_ability_pressed = true
+	await wait(1.0)
+	check(is_instance_valid(e) and e.state == Scrapling.St.FLIPPED, "钻头下砸把附近的锈块兽震翻")
+	P.apply_form(MorphBall.BALL, false)
+	P.debug_input = Vector2(0, 1)
+	await wait(1.5)
+	P.debug_input = Vector2.ZERO
+	check(not is_instance_valid(e), "翻倒后滚球碰一下就击破")
+	# d. 气泡气浪把它推开、掀翻
+	e = await _enemy(Vector3i(44, 3, 26), PI / 2.0)
+	await tp(Vector3i(40, 4, 26), Vector3.ZERO, MorphBall.BUBBLE)
+	await wait(0.3)
+	var ex := e.global_position.x
+	P.debug_ability_pressed = true
+	await wait(0.8)
+	check(is_instance_valid(e) and e.state == Scrapling.St.FLIPPED and e.global_position.x - ex > 1.0, "气浪把锈块兽推开 %.1f m 并掀翻" % (e.global_position.x - ex))
+	e.queue_free()
+	# e. 发现 → 蓄力 → 冲锋撞到 PIX，扣一格护盾
+	e = await _enemy(Vector3i(46, 3, 26), PI / 2.0, true)
+	await tp(Vector3i(40, 4, 26), Vector3.ZERO, MorphBall.BALL)
+	var sh := GameState.shield
+	var hit := false
+	for k in 40:
+		await wait(0.1)
+		if GameState.shield < sh or P.is_invulnerable():
+			hit = true
+			break
+	check(hit, "锈块兽发现 PIX 后蓄力冲锋，撞到扣护盾")
+	if is_instance_valid(e):
+		e.queue_free()

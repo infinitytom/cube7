@@ -77,7 +77,7 @@ func _show_clear() -> void:
 	_root.add_child(dim)
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG_SOLID, UIKit.ACCENT2, 20, 36, 2))
-	UIKit.place(p, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-330, -250, 330, 250))
+	UIKit.place(p, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-330, -215, 330, 215))
 	_root.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 14)
@@ -129,7 +129,7 @@ func _show_clear() -> void:
 	btns.add_child(stay)
 	btns.add_child(home)
 	home.grab_focus.call_deferred()
-	p.pivot_offset = Vector2(330, 250)
+	p.pivot_offset = Vector2(330, 215)
 	p.scale = Vector2(0.9, 0.9)
 	p.modulate.a = 0.0
 	var tw := create_tween().set_parallel()
@@ -327,8 +327,8 @@ func _refresh_prompts() -> void:
 	if p:
 		_prompts.add_child(UIKit.prompt("ability", MorphBall.FORMS[p.form].ability))
 	_prompts.add_child(UIKit.prompt("boost", "加速"))
-	if GameState.allow_jump:
-		_prompts.add_child(UIKit.prompt("jump", "跳跃"))
+	if GameState.allow_jump and p:
+		_prompts.add_child(UIKit.prompt("jump", MorphBall.FORMS[p.form].jump_name))
 	_prompts.add_child(UIKit.prompt("pause", "菜单"))
 	if _form_badges.size() > 0:
 		pass

@@ -40,10 +40,6 @@ func _build() -> void:
 	var core := MeshInstance3D.new()
 	var mesh: Mesh
 	match form:
-		MorphBall.CUBE:
-			var b := BoxMesh.new()
-			b.size = Vector3.ONE * 0.5
-			mesh = b
 		MorphBall.DRILL:
 			var cone := CylinderMesh.new()
 			cone.top_radius = 0.0

@@ -47,6 +47,15 @@ func aerial(name: String, from: Vector3, to: Vector3, wait := 1.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.5).timeout
+	if main.level is AreaGreenhouse and OS.get_cmdline_user_args().has("--quick"):
+		var G := AreaGreenhouse.G
+		var e: Node3D = main.level.enemies[0]
+		var ev := W.world_to_voxel(e.global_position)
+		await shot("q01_enemy", ev + Vector3i(-7, 1, 3), -PI / 2.0 + 0.35, -0.3, false, 2.5)
+		await shot("q02_pipe", Vector3i(46, G, 76), -PI / 2.0 + 0.3, -0.22, false, 2.0)
+		P.debug_override = false
+		get_tree().quit()
+		return
 	if main.level is AreaGreenhouse:
 		var G := AreaGreenhouse.G
 		await aerial("g01_island", Vector3(-10, 70, 150), Vector3(64, 20, 50), 2.0)

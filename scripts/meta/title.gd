@@ -252,7 +252,7 @@ func _build_ui() -> void:
 	_ui.add_child(_hints)
 	_refresh_glyphs()
 	# 版本号
-	var ver := UIKit.label("原型 v0.4  ·  区域 1", 15, Color(1, 1, 1, 0.45))
+	var ver := UIKit.label("原型 v0.5  ·  区域 1", 15, Color(1, 1, 1, 0.45))
 	UIKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-280, -52, -40, -26))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ui.add_child(ver)

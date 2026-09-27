@@ -18,11 +18,12 @@ var circuit: EnergyCircuit
 var plate: PressurePlate
 var socket: ItemSocket
 var crystal: UsableItem
+var scrap: Scrapling
 
 func build() -> void:
 	world = get_node(world_path) as VoxelWorld
 	world.setup(Vector3i(112, 32, 64))
-	GameState.reset_for_level([true, true, true, true, true] as Array[bool], true, -6.0, 0)
+	GameState.reset_for_level([true, true, true] as Array[bool], true, -6.0, 0)
 	_build_terrain()
 	world.rebuild_all()
 	_build_logic()
@@ -85,11 +86,10 @@ func _build_terrain() -> void:
 	_box(Vector3i(78, 3, 31), Vector3i(79, 6, 32), Blocks.RECEIVER)
 	# 物资箱（撞开后掉出能量晶块）
 	_box(Vector3i(64, 4, 21), Vector3i(65, 5, 22), Blocks.CRATE_ITEM)
-	# 磁铁攀爬墙 + 顶部平台
-	_box(Vector3i(60, 4, 43), Vector3i(67, 12, 43), Blocks.METAL)
-	_box(Vector3i(60, 4, 44), Vector3i(67, 12, 47), Blocks.BEDROCK)
-	_box(Vector3i(62, 13, 45), Vector3i(63, 14, 46), Blocks.CRATE)
-	_box(Vector3i(65, 13, 45), Vector3i(65, 13, 45), Blocks.CRATE)
+	# 高台（3 米）：只有气泡的空中再跳够得着
+	_box(Vector3i(60, 4, 43), Vector3i(67, 9, 47), Blocks.BEDROCK)
+	_box(Vector3i(62, 10, 45), Vector3i(63, 11, 46), Blocks.CRATE)
+	_box(Vector3i(65, 10, 45), Vector3i(65, 10, 45), Blocks.CRATE)
 	# 上升气流出风口 + 高处平台
 	_box(Vector3i(73, 3, 18), Vector3i(74, 3, 19), Blocks.METAL)
 	_box(Vector3i(70, 4, 16), Vector3i(77, 9, 17), Blocks.BEDROCK)
@@ -138,6 +138,13 @@ func _build_logic() -> void:
 	])
 	# B
 	_zone(Checkpoint, Vector3i(33, 4, 28), Vector3i(36, 7, 35))
+	scrap = Scrapling.new()
+	add_child(scrap)
+	scrap.global_position = world.voxel_top(Vector3i(44, 3, 26)) + Vector3.UP * 0.05
+	_talk(Vector3i(33, 4, 16), Vector3i(38, 12, 47), [
+		"小心，锈块兽！它正面有盾，冲撞会被弹开。躲开它的冲锋，绕到侧面或背后撞它。",
+		"钻头能无视盾牌，气泡的气浪能把它掀翻——翻倒的时候随便碰一下就碎。",
+	])
 	_talk(Vector3i(44, 4, 16), Vector3i(51, 12, 47), [
 		"岩石撞不碎。用{form}切换形态（或{form_direct}直选），换成钻头，按住{ability}往前钻。",
 		"小提示：站着不动按住{ability}会往下钻。金矿里有金币。",
@@ -149,10 +156,10 @@ func _build_logic() -> void:
 		"那个蓝色物资箱里有能量晶块。撞开它，按{grab}抓起来，再按{grab}扔进发光的缺口。",
 	])
 	_talk(Vector3i(60, 4, 38), Vector3i(67, 8, 42), [
-		"金属墙！换成磁铁形态，按住{ability}吸在墙上，推向墙就能往上爬。上面有补给。",
+		"这面高台滚球跳不上去。换成气泡：{jump}起跳，空中再按{jump}还能再跳两次。",
 	])
 	_talk(Vector3i(70, 4, 18), Vector3i(77, 8, 24), [
-		"出风口有上升气流。太重的形态吹不动——换成气泡试试，{ability}还能喷气上浮。",
+		"出风口有上升气流。太重的形态吹不动——换成气泡试试，按住{jump}还能滑翔。",
 	])
 	socket = ItemSocket.new()
 	add_child(socket)
@@ -165,7 +172,7 @@ func _build_logic() -> void:
 	# D
 	_zone(Checkpoint, Vector3i(82, 4, 36), Vector3i(85, 7, 40))
 	_talk(Vector3i(82, 4, 22), Vector3i(89, 10, 29), [
-		"压力板。滚球太轻压不动，换成立方形态压上去。",
+		"压力板。滚球太轻压不动，换成最重的钻头压上去——从空中{ability}下砸更带劲。",
 	])
 	plate = _zone(PressurePlate, Vector3i(84, 4, 30), Vector3i(86, 5, 33), {"mass_threshold": 2.8}) as PressurePlate
 	plate.world = world

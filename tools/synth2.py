@@ -264,3 +264,48 @@ if __name__ == "__main__":
         render_title()
     if what in ("all", "area"):
         render_area()
+
+
+# ------------------------------------------------------------------ 第二阶段：跳跃 / 战斗 / 敌人
+
+def noise_burst(n, lo, hi):
+    return bp_fast(rng.uniform(-1, 1, n), lo, hi)
+
+def make_combat():
+    # 三种形态的起跳声：滚球清脆、钻头沉重、气泡软糯
+    S.sfx_out("jump_ball", chirp([420, 760], 0.12, 0.8) * np.linspace(1, 0.3, int(0.12 * SR)))
+    n = int(0.16 * SR); t = np.arange(n) / SR
+    S.sfx_out("jump_drill", (np.sin(2 * np.pi * np.cumsum(np.interp(t, [0, 0.16], [160, 260])) / SR) * np.exp(-t * 14)
+                             + noise_burst(n, 200, 900) * np.exp(-t * 30) * 0.5))
+    n = int(0.22 * SR); t = np.arange(n) / SR
+    bub = np.sin(2 * np.pi * np.cumsum(np.interp(t, [0, 0.22], [300, 900]) * (1 + 0.1 * np.sin(2 * np.pi * 30 * t))) / SR) * env(n, 0.01, 0.05, 0.6, 0.1)
+    S.sfx_out("jump_bubble", bub * 0.8, 0.1)
+    # 气浪：低频“噗”+ 上扬的风声
+    n = int(0.5 * SR); t = np.arange(n) / SR
+    whoosh = noise_burst(n, 300, 2500) * np.exp(-t * 6) * 0.8
+    thump = np.sin(2 * np.pi * np.cumsum(np.interp(t, [0, 0.5], [110, 60])) / SR) * np.exp(-t * 12)
+    S.sfx_out("wave", whoosh + thump, 0.15)
+    # 受伤：短促的失真下滑
+    n = int(0.28 * SR); t = np.arange(n) / SR
+    h = np.sign(np.sin(2 * np.pi * np.cumsum(np.interp(t, [0, 0.28], [700, 180])) / SR)) * np.exp(-t * 9) * 0.5
+    S.sfx_out("hurt", lp_fast(h, 3000) + noise_burst(n, 800, 4000) * np.exp(-t * 25) * 0.4)
+    # 盾牌格挡：金属“铛”
+    n = int(0.7 * SR); t = np.arange(n) / SR
+    clang = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) * a for f, d, a in ((820, 6, 0.6), (1370, 8, 0.4), (2240, 11, 0.3), (3510, 15, 0.2)))
+    S.sfx_out("clang", clang + noise_burst(n, 2000, 8000) * np.exp(-t * 60) * 0.6, 0.12)
+    # 锈块兽：发现（两声电子“哔哔？”）/ 蓄力（上升嗡鸣）/ 冲锋（引擎轰）/ 击破（碎裂 + 上扬音）
+    S.sfx_out("enemy_notice", np.concatenate([chirp([500, 520], 0.07), np.zeros(int(0.04 * SR)), chirp([520, 900], 0.1)]) * 0.8, 0.1)
+    n = int(0.7 * SR); t = np.arange(n) / SR
+    f = np.interp(t, [0, 0.7], [120, 480])
+    wu = (np.sign(np.sin(2 * np.pi * np.cumsum(f) / SR)) * 0.3 + np.sin(2 * np.pi * np.cumsum(f * 2) / SR) * 0.3) * np.linspace(0.3, 1, n)
+    S.sfx_out("enemy_windup", lp_fast(wu, 2500) * env(n, 0.02, 0.1, 0.9, 0.05))
+    n = int(0.9 * SR); t = np.arange(n) / SR
+    ch = lp_fast(np.sign(np.sin(2 * np.pi * 70 * t + 3 * np.sin(2 * np.pi * 9 * t))), 900) * 0.4 + noise_burst(n, 150, 1200) * 0.4
+    S.sfx_out("enemy_charge", ch * env(n, 0.01, 0.1, 0.8, 0.25))
+    n = int(0.6 * SR); t = np.arange(n) / SR
+    crunch = noise_burst(n, 400, 5000) * np.exp(-t * 14)
+    rise = np.sin(2 * np.pi * np.cumsum(np.interp(t, [0, 0.35, 0.6], [600, 1400, 1400])) / SR) * env(n, 0.08, 0.1, 0.5, 0.2) * 0.35
+    S.sfx_out("enemy_defeat", crunch + rise, 0.15)
+
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "combat":
+    make_combat()

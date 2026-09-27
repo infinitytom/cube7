@@ -32,9 +32,10 @@ var checkpoint := Vector3(4.75, 3.5, 16.0)
 var checkpoint_form := -1          ## 复活时强制的形态（-1 = 不改）
 var checkpoint_locks_form := false
 var device := "kbm"                ## "ps" / "xbox" / "kbm"
-var unlocked_forms: Array[bool] = [true, true, true, true, true]
+var unlocked_forms: Array[bool] = [true, true, true]
 var kill_y := -6.0                 ## 掉到这个高度以下就回检查点（由关卡设置）
-var allow_jump := false            ## 默认不能跳（致敬平衡球，高低差靠坡道和形态解决）
+var allow_jump := true             ## 每种形态跳法不同；个别关卡（如平衡轨道）可以关掉
+var enemies_defeated := 0
 var fragments := 0
 var level_complete := false
 var fragments_total := 0
@@ -68,6 +69,7 @@ func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count
 	energy = 0
 	shield = max_shield
 	blocks_broken = 0
+	enemies_defeated = 0
 
 func unlock_form(i: int) -> void:
 	if unlocked_forms[i]:
@@ -134,9 +136,9 @@ func _input(event: InputEvent) -> void:
 		device_changed.emit(device)
 
 const GLYPHS := {
-	"ps": {"jump": "✕", "ability": "□", "grab": "○", "view_toggle": "△", "boost": "R2", "form": "L1/R1", "form_direct": "十字键", "respawn": "Create", "pause": "Options", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "✕", "ui_cancel": "○"},
-	"xbox": {"jump": "A", "ability": "X", "grab": "B", "view_toggle": "Y", "boost": "RT", "form": "LB/RB", "form_direct": "十字键", "respawn": "View", "pause": "Menu", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "A", "ui_cancel": "B"},
-	"kbm": {"jump": "空格", "ability": "左键", "grab": "E", "view_toggle": "V", "boost": "Shift", "form": "滚轮", "form_direct": "1-5", "respawn": "R", "pause": "Esc", "move": "WASD", "camera": "鼠标", "ui_accept": "Enter", "ui_cancel": "Esc"},
+	"ps": {"jump": "✕", "ability": "□", "grab": "○", "view_toggle": "△", "boost": "R2", "form": "L1/R1", "form_direct": "十字键 ←↑→", "respawn": "Create", "pause": "Options", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "✕", "ui_cancel": "○"},
+	"xbox": {"jump": "A", "ability": "X", "grab": "B", "view_toggle": "Y", "boost": "RT", "form": "LB/RB", "form_direct": "十字键 ←↑→", "respawn": "View", "pause": "Menu", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "A", "ui_cancel": "B"},
+	"kbm": {"jump": "空格", "ability": "左键", "grab": "E", "view_toggle": "V", "boost": "Shift", "form": "滚轮", "form_direct": "1-3", "respawn": "R", "pause": "Esc", "move": "WASD", "camera": "鼠标", "ui_accept": "Enter", "ui_cancel": "Esc"},
 }
 
 func glyph(action: String) -> String:

@@ -14,7 +14,14 @@ func _ready() -> void:
 	W = main.world
 	L = main.level
 	P.debug_override = true
+	# 路线测试不管敌人（战斗在测试房间里单独测）；先确认两只都放出来了
+	enemy_count = L.enemies.size()
+	for e in L.enemies:
+		if is_instance_valid(e):
+			e.queue_free()
 	_run()
+
+var enemy_count := 0
 
 func check(cond: bool, msg: String) -> void:
 	print(("  [PASS] " if cond else "  [FAIL] ") + msg)
@@ -54,7 +61,8 @@ func _run() -> void:
 	print("===== 区域 1 整关测试 =====")
 	await wait(1.0)
 	check(P.grounded, "出生点：球停在坑底")
-	check(GameState.unlocked_forms == [true, false, false, false, false], "开局只有滚球形态")
+	check(GameState.unlocked_forms == [true, false, false], "开局只有滚球形态")
+	check(enemy_count == 2, "关卡里放了 %d 只锈块兽" % enemy_count)
 	P.request_form(MorphBall.DRILL)
 	check(P.form == MorphBall.BALL, "未解锁的钻头无法切换")
 
@@ -70,6 +78,28 @@ func _run() -> void:
 	await go(Vector2(0, -1), 1.5, false, true)
 	var pv := vx(P.global_position)
 	check(pv.x < 62 or pv.y < G, "5 米深沟无法靠全速冲过（x=%d, y=%d）" % [pv.x, pv.y])
+	# 2b. 加速助跑再起跳也跨不过去（跳跃不能绕过这个谜题）
+	await tp(Vector3i(38, G, 76), Vector3(11, 0, 0))
+	P.debug_boost = true
+	P.debug_input = Vector2(0, -1)
+	for k in 240:
+		await get_tree().physics_frame
+		if vx(P.global_position).x >= 51:
+			break
+	P.debug_jump_held = true
+	P.debug_jump_pressed = true
+	var crossed := false
+	var far := 0
+	for k in 100:
+		await get_tree().physics_frame
+		var q := vx(P.global_position)
+		far = maxi(far, q.x)
+		if q.x >= 62 and q.y >= G:
+			crossed = true
+	P.debug_jump_held = false
+	P.debug_boost = false
+	P.debug_input = Vector2.ZERO
+	check(not crossed, "加速起跳也跨不过深沟（最远 x=%d）" % far)
 	await go(Vector2(0, 1), 0.2)
 	# 从逃生坡道回西侧
 	await tp(Vector3i(61, G - 3, 79))
@@ -93,8 +123,43 @@ func _run() -> void:
 			break
 	check(best_row >= 0, "深沟被填到离地面 1 米以内（第一条可通行的行 z=%d）" % best_row)
 	if best_row >= 0:
-		await tp(Vector3i(50, G + 2, best_row + 1), Vector3(6, 0, 0))
-		await go(Vector2(0, -1), 3.0, false, true)
+		# 从砂塔原来的位置（水管在这里断开）滚过去；像玩家一样边滚边修正方向
+		var row := clampi(best_row, 63, 69)
+		await tp(Vector3i(46, G, row), Vector3(4, 0, 0))
+		var zc := (float(row) + 0.5) * VoxelWorld.VOXEL
+		P.debug_boost = true
+		for k in 240:
+			await get_tree().physics_frame
+			var dz := zc - P.global_position.z
+			P.debug_input = Vector2(clampf(dz * 2.0, -1.0, 1.0), -1.0)
+			# 卡在砂堆的小坎上就跳一下（玩家也会这么做）
+			P.debug_jump_held = true
+			if k > 20 and k % 25 == 0 and Vector2(P.linear_velocity.x, P.linear_velocity.z).length() < 2.0:
+				P.debug_jump_pressed = true
+			if vx(P.global_position).x >= 63:
+				break
+		P.debug_jump_held = false
+		P.debug_boost = false
+		P.debug_input = Vector2.ZERO
+		# 砂子没填满时对岸会有一级小台阶——跳一下就上去了
+		if vx(P.global_position).x < 62:
+			P.debug_input = Vector2(0, -1)
+			P.debug_jump_held = true
+			P.debug_jump_pressed = true
+			await wait(1.2)
+			P.debug_jump_held = false
+			P.debug_input = Vector2.ZERO
+		if vx(P.global_position).x < 62:
+			var zz := vx(P.global_position).z
+			var cols := []
+			for xx in range(56, 66):
+				var top := -1
+				for yy in range(G + 12, G - 6, -1):
+					if W.get_block(Vector3i(xx, yy, zz)) != Blocks.AIR:
+						top = yy
+						break
+				cols.append("%d:%d(%d)" % [xx, top, W.get_block(Vector3i(xx, top, zz))])
+			print("    调试：球 ", vx(P.global_position), " 列顶 ", cols)
 		check(vx(P.global_position).x >= 62, "从填平处滚过深沟（x=%d）" % vx(P.global_position).x)
 
 	# 4. 坡道登上温室高台

@@ -41,6 +41,7 @@ const SOCKET := Vector3i(100, G + 1, 29)
 var heights := {}          # Vector2i -> 地面高度（第一个空气层的 y）
 var backdrop := false      ## 只当标题画面背景：不放机关、不放音乐
 var socket: ItemSocket
+var enemies: Array[Scrapling] = []
 var form_core: Node
 var fragments := {}        # id -> 节点
 var crystal: UsableItem
@@ -58,7 +59,7 @@ func spawn_position() -> Vector3:
 func build() -> void:
 	world = get_node(world_path) as VoxelWorld
 	if not backdrop:
-		GameState.reset_for_level([true, false, false, false, false] as Array[bool], false, 1.0, 3)
+		GameState.reset_for_level([true, false, false] as Array[bool], true, 1.0, 3)
 	var sky := SkyWorld.new()
 	sky.center = Vector3(SIZE.x * 0.25, 0, SIZE.z * 0.25)
 	add_child(sky)
@@ -223,20 +224,42 @@ func _sand_pit() -> void:
 			if h_at(x, z) == G:
 				_set_h(x, z, G - 4)
 				_column(x, z, G - 4, 8, Blocks.CLIFF)
-	# 沟两端的挡土墙：比地面低半格——挡住砂子不漏进云海，球却爬不上对岸（不会成为捷径）
+	# 沟两端的挡土墙：比地面低半格——挡住砂子不漏进云海
 	for z in [58, 59, 60, 61, 86, 87, 88]:
 		for x in range(PIT_X.x, PIT_X.y + 1):
 			if h_at(x, z) < 0 or h_at(x, z) == G - 4:
 				_set_h(x, z, G - 1)
 				_column(x, z, G - 1, 8, Blocks.CLIFF)
+		# 挡土墙东端立一道金属护栏：不能沿着墙顶滚过去再跳上对岸
+		if h_at(PIT_X.y + 1, z) >= G - 1:
+			world.fill_box(Vector3i(PIT_X.y + 1, G, z), Vector3i(PIT_X.y + 1, G + 2, z), Blocks.METAL)
 	# 掉进沟里的逃生坡道：只能回到西侧
 	_flatten(PIT_X.x, 78, PIT_X.x + 1, 81, G, Blocks.CLIFF)
 	world.fill_ramp(Vector3i(PIT_X.x + 2, G - 4, 78), Vector3i(PIT_X.y, G - 4, 81), VoxelWorld.Ramp.NX, Blocks.CLIFF, true)
 	# 砂塔：6×6×10，立在一层木箱底座上
 	# 砂塔一半悬在沟的上方，由一层支撑木架托着；路边那根橙色支撑桩连着木架
-	world.fill_box(Vector3i(PIT_X.x, G - 1, 62), Vector3i(PIT_X.y, G - 1, 70), Blocks.SUPPORT)
+	world.fill_box(Vector3i(PIT_X.x, G - 1, 63), Vector3i(PIT_X.y, G - 1, 70), Blocks.SUPPORT)
 	world.fill_box(Vector3i(51, G - 1, 70), Vector3i(51, G + 1, 70), Blocks.SUPPORT)
 	world.fill_box(Vector3i(PIT_X.x, G, 63), Vector3i(PIT_X.y, G + 11, 69), Blocks.SAND)
+	# 沟上方横着一根打不坏的旧灌溉管：想直接跳过去会撞上管子掉进沟里——得先把沟填平再滚过去
+	var zs: Array[int] = []
+	for z in range(50, SIZE.z):
+		var h := h_at(56, z)
+		if h == G - 4 or h == G - 1:
+			zs.append(z)
+	if not zs.is_empty():
+		var z0: int = zs.min() - 1
+		var z1: int = zs.max() + 1
+		for z in range(z0, z1 + 1):
+			if z < 62 or z > 70:
+				world.fill_box(Vector3i(56, G + 2, z), Vector3i(57, G + 3, z), Blocks.METAL)
+		for z in [z0, z1]:
+			if h_at(56, z) >= G - 1:
+				world.fill_box(Vector3i(56, G, z), Vector3i(57, G + 1, z), Blocks.METAL)
+		# 管子上每隔几格一个接口环，看起来更像管道
+		for z in range(z0 + 3, z1, 6):
+			if z < 61 or z > 71:
+				world.fill_box(Vector3i(55, G + 2, z), Vector3i(58, G + 3, z), Blocks.HULL_DARK)
 	# 沟东侧的小平台和石头
 	world.fill_box(Vector3i(71, G, 80), Vector3i(72, G + 1, 81), Blocks.ROCK)
 	tree(Vector3i(73, G, 72), 6, 2.4)
@@ -419,10 +442,40 @@ func _fragment(id: String, cell: Vector3i, props: Dictionary) -> void:
 	f.set("frag_id", id)
 	fragments[id] = f
 
+## 在目标附近找一块 3×3 平地放一只锈块兽
+func _enemy_near(x: int, z: int) -> void:
+	for r in range(0, 5):
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var cx := x + dx
+				var cz := z + dz
+				var h := h_at(cx, cz)
+				if h < 0:
+					continue
+				var flat := true
+				for oz in range(-1, 2):
+					for ox in range(-1, 2):
+						if h_at(cx + ox, cz + oz) != h:
+							flat = false
+				if flat and world.get_block(Vector3i(cx, h, cz)) == Blocks.AIR:
+					var e := Scrapling.new()
+					add_child(e)
+					e.global_position = world.voxel_top(Vector3i(cx, h - 1, cz)) + Vector3.UP * 0.05
+					e.rotation.y = randf() * TAU
+					enemies.append(e)
+					return
+
 func _logic() -> void:
 	var marker := ObjectiveMarker.new()
 	marker.name = "ObjectiveMarker"
 	add_child(marker)
+	# 敌人：花园里一只（先学会绕侧面撞），中枢塔台地一只（有了钻头可以无视盾牌）
+	_enemy_near(38, 64)
+	_enemy_near(96, 36)
+	talk(Vector3i(30, G, 58), Vector3i(44, G + 4, 70), [
+		"小心，那是锈块兽——被异变侵蚀的维护机器。它正面有盾，正面撞会被弹开。",
+		"等它冲锋撞空、晕头转向的时候，或者绕到侧面、背后，再按{ability}冲撞！",
+	])
 	GameState.set_objective(0, "离开坠毁坑（东边有坡道）", _v(Vector3i(26, G, 74)))
 	GameState.form_unlocked.connect(func(i: int) -> void:
 		if i == MorphBall.DRILL:
@@ -437,7 +490,7 @@ func _logic() -> void:
 	zone(Checkpoint, SPAWN + Vector3i(-2, 0, -2), SPAWN + Vector3i(2, 3, 2))
 	talk(SPAWN + Vector3i(-3, 0, -3), SPAWN + Vector3i(3, 5, 3), [
 		"……PIX？PIX！能听到吗？我是站点 AI NOVA。你的着陆……呃，算是着陆吧。",
-		"用{move}滚动，{camera}转镜头。先滚出这个坑——坡道在东边。",
+		"用{move}滚动，{camera}转镜头，{jump}跳。先滚出这个坑——坡道在东边。",
 	])
 	talk(Vector3i(21, G - 2, 70), Vector3i(26, G + 3, 78), [
 		"坑口被木箱堵住了。别减速，直接撞上去——速度就是力量。",
@@ -449,7 +502,7 @@ func _logic() -> void:
 	# C
 	zone(Checkpoint, Vector3i(40, G, 71), Vector3i(44, G + 3, 76))
 	talk(Vector3i(42, G, 62), Vector3i(51, G + 4, 80), [
-		"这道沟太宽了，冲过去也会掉下去。……看那座砂塔，一半悬在沟上，全靠底下的木架撑着。",
+		"这道沟太宽，冲过去、跳过去都不行——沟上还横着一根旧水管。……看那座砂塔，一半悬在沟上，全靠底下的木架撑着。",
 		"路边那根橙色的支撑桩连着整片木架。撞断它会发生什么呢？",
 	])
 	coin_line(Vector3i(45, G, 70), Vector3i(45, G, 72), 2)
@@ -497,6 +550,8 @@ func _logic() -> void:
 ## 继续游戏：恢复存档里的进度
 func apply_save(d: Dictionary) -> void:
 	var forms: Array = d.get("forms", [])
+	if forms.size() == 5:
+		forms = [forms[0], forms[1], forms[4]]   # 旧存档（五形态）→ 滚球 / 钻头 / 气泡
 	if forms.size() == GameState.unlocked_forms.size():
 		for i in forms.size():
 			GameState.unlocked_forms[i] = bool(forms[i])

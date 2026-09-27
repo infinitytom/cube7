@@ -3,30 +3,29 @@ extends RigidBody3D
 ## 主角 PIX：可变形的维护探测球。
 ## 滚动手感致敬《平衡球》：真实惯性，形态不同重量不同，同一段路换形态就是另一种走法。
 
-enum { BALL, DRILL, CUBE, MAGNET, BUBBLE }
+enum { BALL, DRILL, BUBBLE }
 
-## 每个形态的物理参数。roll = 是否靠滚动（施加扭矩）移动；false 则锁定旋转、靠推力移动
+## 三种形态，各自有不同的跳法和打法（参考马里奥：跳跃就是动词，每种形态换一套动词）
+##   滚球：快、中等跳跃（按住跳得更高），冲撞攻击——正面有盾的敌人要绕到侧后撞
+##   钻头：重、只能小跳，地面按住钻掘、空中按下砸地（震翻周围敌人、压得动压力板）
+##   气泡：轻、跳得最高，空中还能再喷两次、按住跳滑翔，气浪攻击把敌人推开掀翻
+## jump = 起跳速度（米/秒）；air_jumps = 空中额外跳跃次数；glide = 按住跳时的最大下落速度
 const FORMS: Array[Dictionary] = [
-	{"id": "ball", "name": "滚球", "ability": "冲刺", "color": Color("46c3ff"),
+	{"id": "ball", "name": "滚球", "ability": "冲撞", "jump_name": "跳跃（按住更高）", "color": Color("46c3ff"),
 		"mass": 1.0, "shape": "sphere", "radius": 0.48, "roll": true,
-		"torque": 8.0, "ground_force": 2.5, "air_force": 5.0, "max_speed": 7.0, "boost_speed": 12.0,
-		"jump": 5.2, "gravity": 1.0, "friction": 0.9, "bounce": 0.12, "lin_damp": 0.08, "ang_damp": 0.6},
-	{"id": "drill", "name": "钻头", "ability": "钻掘（静止时向下）", "color": Color("ffb03b"),
-		"mass": 2.5, "shape": "sphere", "radius": 0.46, "roll": false,
-		"torque": 0.0, "ground_force": 9.0, "air_force": 3.0, "max_speed": 4.0, "boost_speed": 6.0,
-		"jump": 3.8, "gravity": 1.0, "friction": 0.5, "bounce": 0.0, "lin_damp": 1.2, "ang_damp": 3.0},
-	{"id": "cube", "name": "立方", "ability": "空中重压", "color": Color("8cff6b"),
-		"mass": 3.0, "shape": "box", "radius": 0.45, "roll": true,
-		"torque": 16.0, "ground_force": 1.5, "air_force": 3.0, "max_speed": 4.0, "boost_speed": 6.0,
-		"jump": 4.2, "gravity": 1.2, "friction": 1.0, "bounce": 0.0, "lin_damp": 0.3, "ang_damp": 1.5},
-	{"id": "magnet", "name": "磁铁", "ability": "吸附攀爬（按住）", "color": Color("ff5a6e"),
-		"mass": 1.4, "shape": "sphere", "radius": 0.48, "roll": true,
-		"torque": 7.0, "ground_force": 2.5, "air_force": 4.0, "max_speed": 6.0, "boost_speed": 9.0,
-		"jump": 4.8, "gravity": 1.0, "friction": 0.9, "bounce": 0.05, "lin_damp": 0.1, "ang_damp": 0.8},
-	{"id": "bubble", "name": "气泡", "ability": "喷气上浮", "color": Color("c9a6ff"),
+		"torque": 8.0, "ground_force": 2.5, "air_force": 3.0, "max_speed": 7.0, "boost_speed": 11.0,
+		"jump": 5.6, "air_jumps": 0, "glide": 0.0, "gravity": 1.25,
+		"friction": 0.9, "bounce": 0.12, "lin_damp": 0.08, "ang_damp": 0.6},
+	{"id": "drill", "name": "钻头", "ability": "钻掘 · 空中下砸", "jump_name": "小跳", "color": Color("ffb03b"),
+		"mass": 3.0, "shape": "sphere", "radius": 0.46, "roll": false,
+		"torque": 0.0, "ground_force": 9.0, "air_force": 3.0, "max_speed": 4.0, "boost_speed": 5.5,
+		"jump": 3.8, "air_jumps": 0, "glide": 0.0, "gravity": 1.0,
+		"friction": 0.5, "bounce": 0.0, "lin_damp": 1.2, "ang_damp": 3.0},
+	{"id": "bubble", "name": "气泡", "ability": "气浪", "jump_name": "跳跃 · 空中再跳 · 按住滑翔", "color": Color("c9a6ff"),
 		"mass": 0.3, "shape": "sphere", "radius": 0.5, "roll": true,
-		"torque": 3.0, "ground_force": 4.0, "air_force": 5.0, "max_speed": 4.5, "boost_speed": 6.0,
-		"jump": 3.2, "gravity": 0.25, "friction": 0.6, "bounce": 0.5, "lin_damp": 1.0, "ang_damp": 1.0},
+		"torque": 3.0, "ground_force": 4.0, "air_force": 4.5, "max_speed": 4.5, "boost_speed": 6.0,
+		"jump": 5.2, "air_jumps": 2, "glide": 1.1, "gravity": 0.45,
+		"friction": 0.6, "bounce": 0.5, "lin_damp": 1.0, "ang_damp": 1.0},
 ]
 
 const IMPACT_MIN := 1.8
@@ -44,6 +43,17 @@ var debug_input := Vector2.ZERO
 var debug_ability := false
 var debug_ability_pressed := false
 var debug_boost := false
+var debug_jump_pressed := false
+var debug_jump_held := false
+
+## 攻击状态（敌人读取）："" / "ram" 冲撞 / "drill" 钻 / "pound" 下砸
+var attack := ""
+var _dash_t := 0.0
+var _air_jumps := 0
+var _jump_rising := false
+var _invuln := 0.0
+const POUND_RADIUS := 3.0
+const WAVE_RADIUS := 3.6
 
 var _ground_timer := 0.0
 var _prev_vel := Vector3.ZERO
@@ -71,7 +81,7 @@ func _ready() -> void:
 	continuous_cd = true
 	can_sleep = false
 	collision_layer = 2
-	collision_mask = 1 | 4 | 8
+	collision_mask = 1 | 4 | 8 | 16
 	physics_material_override = PhysicsMaterial.new()
 	_shape_node = get_node_or_null("CollisionShape3D")
 	if _shape_node == null:
@@ -111,6 +121,16 @@ func _ability_pressed() -> bool:
 		return p
 	return Input.is_action_just_pressed("ability")
 
+func _jump_pressed() -> bool:
+	if debug_override:
+		var p := debug_jump_pressed
+		debug_jump_pressed = false
+		return p
+	return Input.is_action_just_pressed("jump")
+
+func _jump_held() -> bool:
+	return debug_jump_held if debug_override else Input.is_action_pressed("jump")
+
 func _boost_held() -> bool:
 	return debug_boost if debug_override else Input.is_action_pressed("boost")
 
@@ -130,7 +150,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		cycle_form(1)
 	elif event.is_action_pressed("form_prev"):
 		cycle_form(-1)
-	for i in 5:
+	for i in FORMS.size():
 		if event.is_action_pressed("form_%d" % (i + 1)):
 			request_form(i)
 	if event.is_action_pressed("grab"):
@@ -142,8 +162,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func cycle_form(step: int) -> void:
 	var i := form
-	for n in 5:
-		i = posmod(i + step, 5)
+	for n in FORMS.size():
+		i = posmod(i + step, FORMS.size())
 		if GameState.unlocked_forms[i]:
 			request_form(i)
 			return
@@ -178,8 +198,8 @@ func apply_form(i: int, fx: bool) -> void:
 		_shape_node.shape = s
 	for k in _visuals.size():
 		_visuals[k].visible = k == i
-	_magnet_stuck = false
 	_pounding = false
+	attack = ""
 	if fx:
 		_visual_root.scale = Vector3.ONE * 0.45
 		var tw := create_tween()
@@ -243,7 +263,7 @@ func _physics_process(delta: float) -> void:
 	var boosting := _boost_held()
 	var max_s: float = f.boost_speed if boosting else f.max_speed
 	var mul := 1.6 if boosting else 1.0
-	if dir.length() > 0.05 and not _magnet_stuck:
+	if dir.length() > 0.05:
 		var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
 		var d := dir.normalized() * minf(dir.length(), 1.0)
 		if vh.dot(d.normalized()) < max_s:
@@ -252,15 +272,12 @@ func _physics_process(delta: float) -> void:
 			var a: float = f.ground_force if _ground_timer > 0.0 else f.air_force
 			apply_central_force(d * a * mass * mul)
 
-	# 跳跃
-	var jump := Input.is_action_just_pressed("jump") and not debug_override and GameState.allow_jump
-	if jump and _ground_timer > 0.0:
-		_ground_timer = 0.0
-		linear_velocity.y = maxf(linear_velocity.y, 0.0)
-		apply_central_impulse(Vector3.UP * float(f.jump) * mass)
+	_update_jump(delta, f)
+	_update_attack_state(delta)
 
 	if _ground_timer > 0.0:
 		_puffs = 0
+		_air_jumps = int(f.air_jumps)
 	_no_snap -= delta
 	_snap_to_ground()
 	# 滚动声：贴地时随速度变大、变尖
@@ -284,7 +301,7 @@ func _physics_process(delta: float) -> void:
 ## 贴地：刚离开地面（坡顶、小台阶）时，如果正下方很近处还有地面，就压回去，
 ## 避免高速过坡顶时整个飞出去。真正的断崖（下方没有地面）不受影响。
 func _snap_to_ground() -> void:
-	if grounded or _no_snap > 0.0 or _magnet_stuck or form == BUBBLE:
+	if grounded or _no_snap > 0.0 or _jump_rising or form == BUBBLE:
 		return
 	if _ground_timer <= 0.0:
 		return
@@ -304,38 +321,156 @@ func _snap_to_ground() -> void:
 func launched(secs := 0.5) -> void:
 	_no_snap = secs
 
+## 跳跃：起跳 / 可变高度（松开跳跃键时截短上升）/ 气泡的空中再跳与滑翔
+func _update_jump(delta: float, f: Dictionary) -> void:
+	if not GameState.allow_jump:
+		return
+	var pressed := _jump_pressed()
+	var held := _jump_held()
+	if pressed:
+		if _ground_timer > 0.0:
+			_do_jump(float(f.jump))
+			Sfx.play("jump_" + str(f.id), global_position, -6.0, 0.06)
+		elif _air_jumps > 0:
+			_air_jumps -= 1
+			_do_jump(float(f.jump) * 0.8)
+			_burst(f.color)
+			Sfx.play("jump_bubble", global_position, -4.0, 0.1)
+	if _jump_rising:
+		if linear_velocity.y <= 0.0:
+			_jump_rising = false
+		elif not held:
+			# 马里奥式可变跳：提前松开就少跳一点
+			linear_velocity.y *= 0.5
+			_jump_rising = false
+	# 滑翔：按住跳下落时限速
+	var glide: float = f.glide
+	if glide > 0.0 and held and linear_velocity.y < -glide and _ground_timer <= 0.0:
+		linear_velocity.y = move_toward(linear_velocity.y, -glide, 30.0 * delta)
+
+func _do_jump(v: float) -> void:
+	_ground_timer = 0.0
+	_jump_rising = true
+	_no_snap = 0.25
+	linear_velocity.y = v
+
+## 攻击判定窗口：冲撞持续 0.35 秒；滚得够快本身也算冲撞
+func _update_attack_state(delta: float) -> void:
+	_dash_t -= delta
+	_invuln -= delta
+	if _invuln > 0.0:
+		_visual_root.visible = fmod(_invuln, 0.16) > 0.08
+	elif not _visual_root.visible and _hidden_by == "":
+		_visual_root.visible = true
+	match form:
+		BALL:
+			var fast := Vector3(linear_velocity.x, 0, linear_velocity.z).length() > 6.0
+			attack = "ram" if _dash_t > 0.0 or fast else ""
+		DRILL:
+			attack = "pound" if _pounding else ("drill" if _ability_held() and _ground_timer > 0.0 else "")
+		BUBBLE:
+			attack = ""
+
 func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 	var pressed := _ability_pressed()
 	var held := _ability_held()
 	match form:
 		BALL:
 			if pressed and _ability_cd <= 0.0:
-				_ability_cd = 0.9
+				_ability_cd = 0.8
+				_dash_t = 0.35
 				var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
 				apply_central_impulse((_move_dir * DASH_SPEED - vh) * mass)
 				_burst(f.color)
 				Sfx.play("dash", global_position, -2.0)
 		DRILL:
-			if held:
+			if _ground_timer <= 0.0 and pressed and not _pounding:
+				# 空中下砸
+				_pounding = true
+				linear_velocity = Vector3(0, -16.0, 0)
+				Sfx.play("dash", global_position, -4.0, 0.0)
+			elif _pounding and _ground_timer > 0.0:
+				_pounding = false
+				_pound_land()
+			elif held and _ground_timer > 0.0:
 				_drill_timer -= delta
 				if _drill_bit:
 					_drill_bit.rotate_object_local(Vector3.UP, delta * 30.0)
 				if _drill_timer <= 0.0:
 					_drill_timer = 0.09
 					_drill(dir)
-		CUBE:
-			if pressed and _ground_timer <= 0.0 and not _pounding:
-				_pounding = true
-				linear_velocity = Vector3(0, -15.0, 0)
-			if _ground_timer > 0.0:
-				_pounding = false
-		MAGNET:
-			_update_magnet(held, dir, f)
 		BUBBLE:
-			if pressed and _puffs < 3:
-				_puffs += 1
-				linear_velocity.y = 3.6
-				_burst(f.color)
+			if pressed and _ability_cd <= 0.0:
+				_ability_cd = 0.7
+				_wave()
+
+## 下砸落地：砸碎脚下的可破坏方块，震翻周围的敌人
+func _pound_land() -> void:
+	GameState.shake.emit(0.45)
+	Sfx.play("thud", global_position, 2.0, 0.05)
+	Sfx.play("break_hard", global_position, -2.0, 0.1)
+	_ring_fx(FORMS[DRILL].color, POUND_RADIUS)
+	if world:
+		world.break_sphere(global_position + Vector3.DOWN * 0.6, 1.0, "impact", 10.0)
+	for e in get_tree().get_nodes_in_group("enemy"):
+		var d := (e as Node3D).global_position.distance_to(global_position)
+		if d < POUND_RADIUS:
+			e.call("on_pound", global_position)
+
+## 气浪：把周围的敌人、物件推开
+func _wave() -> void:
+	_ring_fx(FORMS[BUBBLE].color, WAVE_RADIUS)
+	Sfx.play("wave", global_position, -2.0, 0.05)
+	for e in get_tree().get_nodes_in_group("enemy"):
+		var d := (e as Node3D).global_position.distance_to(global_position)
+		if d < WAVE_RADIUS:
+			e.call("on_wave", global_position)
+	for n in get_tree().get_nodes_in_group("usable_item"):
+		var rb := n as RigidBody3D
+		if rb and rb.global_position.distance_to(global_position) < WAVE_RADIUS and not rb.get("held"):
+			var away := (rb.global_position - global_position)
+			away.y = 0.0
+			rb.apply_central_impulse((away.normalized() * 4.0 + Vector3.UP * 2.0) * rb.mass)
+
+## 受伤：扣一格护盾、击退、短暂无敌闪烁
+func hurt(from: Vector3, n := 1) -> void:
+	if _invuln > 0.0:
+		return
+	_invuln = 1.4
+	var away := global_position - from
+	away.y = 0.0
+	linear_velocity = away.normalized() * 6.0 + Vector3.UP * 4.0
+	_no_snap = 0.4
+	Sfx.play("hurt", Vector3.INF, -2.0, 0.05)
+	Sfx.play("pix_hurt", Vector3.INF, -8.0, 0.1)
+	GameState.shake.emit(0.35)
+	GameState.damage(n)
+
+func is_invulnerable() -> bool:
+	return _invuln > 0.0
+
+## 地面上扩散的一圈光环
+func _ring_fx(color: Color, radius: float) -> void:
+	var mi := MeshInstance3D.new()
+	var t := TorusMesh.new()
+	t.inner_radius = 0.9
+	t.outer_radius = 1.0
+	t.rings = 24
+	mi.mesh = t
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(color, 0.8)
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	get_parent().add_child(mi)
+	mi.global_position = global_position + Vector3.DOWN * 0.35
+	mi.scale = Vector3.ONE * 0.3
+	var tw := mi.create_tween().set_parallel()
+	tw.tween_property(mi, "scale", Vector3(radius, 1.0, radius), 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(m, "albedo_color:a", 0.0, 0.4)
+	tw.chain().tween_callback(mi.queue_free)
 
 func _drill(dir: Vector3) -> void:
 	if world == null:
@@ -364,41 +499,6 @@ func _drill(dir: Vector3) -> void:
 	if broke:
 		GameState.shake.emit(0.06)
 		Sfx.play("drill", global_position, -6.0, 0.1)
-
-func _update_magnet(held: bool, dir: Vector3, f: Dictionary) -> void:
-	var was := _magnet_stuck
-	_magnet_stuck = false
-	if held and world:
-		var c := world.world_to_voxel(global_position)
-		var best := 1.2 * 1.2
-		var best_pos := Vector3.ZERO
-		var found := false
-		for dz in range(-2, 3):
-			for dy in range(-2, 3):
-				for dx in range(-2, 3):
-					var p := c + Vector3i(dx, dy, dz)
-					if world.get_block(p) == Blocks.METAL:
-						var d2 := world.voxel_center(p).distance_squared_to(global_position)
-						if d2 < best:
-							best = d2
-							best_pos = world.voxel_center(p)
-							found = true
-		if found:
-			_magnet_stuck = true
-			var to_wall := (best_pos - global_position).normalized()
-			var wall_n := -to_wall
-			apply_central_force(to_wall * 22.0 * mass)
-			# 推向墙 = 向上爬；其他方向沿墙面移动
-			var tangent := dir - wall_n * dir.dot(wall_n)
-			if absf(wall_n.y) < 0.5:
-				tangent += Vector3.UP * maxf(0.0, -dir.dot(wall_n)) * 1.2
-			apply_central_force(tangent * 14.0 * mass)
-	if _magnet_stuck:
-		gravity_scale = 0.0
-		linear_damp = 4.0
-	elif was:
-		gravity_scale = f.gravity
-		linear_damp = f.lin_damp
 
 func _handle_impacts() -> void:
 	var list := _impacts.duplicate()
@@ -462,7 +562,10 @@ func _release_held(vel: Vector3) -> void:
 		(_held as RigidBody3D).linear_velocity = vel
 	_held = null
 
+var _hidden_by := ""
+
 func set_visual_hidden(v: bool) -> void:
+	_hidden_by = "camera" if v else ""
 	_visual_root.visible = not v
 
 func is_holding() -> bool:
@@ -534,21 +637,6 @@ func _build_visuals() -> void:
 				_drill_bit = bit
 				var ring := _ring(c, root, 0.45)
 				ring.rotation_degrees.x = 90.0
-			CUBE:
-				var b := BoxMesh.new()
-				b.size = Vector3.ONE * 0.9
-				_mesh(b, _mat(shell), root)
-				var band := BoxMesh.new()
-				band.size = Vector3(0.93, 0.14, 0.93)
-				_mesh(band, _mat(c, 2.5), root)
-			MAGNET:
-				var top := _sphere(0.48)
-				top.is_hemisphere = true
-				top.height = 0.48
-				_mesh(top, _mat(Color("e0364f")), root)
-				var bot := _mesh(top, _mat(Color("3a6dff")), root)
-				bot.rotation_degrees.x = 180.0
-				_ring(Color.WHITE, root, 0.49)
 			BUBBLE:
 				_mesh(_sphere(0.5), _mat(c, 0.4, 0.35), root)
 				_mesh(_sphere(0.16), _mat(c, 3.0), root)
