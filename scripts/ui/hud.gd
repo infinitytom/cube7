@@ -7,6 +7,7 @@ const FONT_NAMES := ["Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "No
 var _coins: Label
 var _energy: Label
 var _shield: Label
+var _frag: Label
 var _nova_panel: PanelContainer
 var _nova_label: Label
 var _form_slots: Array[Label] = []
@@ -38,6 +39,7 @@ func _ready() -> void:
 	_coins = _label(stats, 26, Color("ffd23f"))
 	_energy = _label(stats, 22, Color("4dfcff"))
 	_shield = _label(stats, 22, Color("9cff9c"))
+	_frag = _label(stats, 22, Color("c9a6ff"))
 
 	# 顶部：NOVA 对话
 	_nova_panel = PanelContainer.new()
@@ -91,6 +93,8 @@ func _ready() -> void:
 	GameState.coins_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.energy_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.shield_changed.connect(func(_v: int) -> void: _refresh_stats())
+	GameState.fragments_changed.connect(func(_v: int) -> void: _refresh_stats())
+	GameState.form_unlocked.connect(_on_form_unlocked)
 	GameState.form_changed.connect(func(_i: int) -> void: _refresh_forms())
 	GameState.device_changed.connect(func(_k: String) -> void: _refresh_hints())
 	GameState.nova_say.connect(func(t: String) -> void: _queue.append(t))
@@ -133,6 +137,15 @@ func _fmt(t: String) -> String:
 		t = t.replace("{%s}" % key, "【%s】" % GameState.glyph(key))
 	return t
 
+func _on_form_unlocked(i: int) -> void:
+	_refresh_forms()
+	var pc := _form_slots[i].get_parent() as Control
+	pc.pivot_offset = pc.size * 0.5
+	var tw := create_tween()
+	for k in 3:
+		tw.tween_property(pc, "scale", Vector2.ONE * 1.25, 0.12)
+		tw.tween_property(pc, "scale", Vector2.ONE, 0.12)
+
 func _refresh_stats() -> void:
 	_coins.text = "◆ 金币  %d" % GameState.coins
 	if GameState.shield < GameState.max_shield:
@@ -140,6 +153,8 @@ func _refresh_stats() -> void:
 	else:
 		_energy.text = "⚡ 能源  %d" % GameState.energy
 	_shield.text = "护盾  " + "■".repeat(GameState.shield) + "□".repeat(GameState.max_shield - GameState.shield)
+	_frag.visible = GameState.fragments_total > 0
+	_frag.text = "◈ 记忆碎片  %d / %d" % [GameState.fragments, GameState.fragments_total]
 
 func _refresh_forms() -> void:
 	var p := GameState.player as MorphBall
@@ -164,7 +179,7 @@ func _refresh_hints() -> void:
 	_hint.text = "\n".join([
 		"移动  %s" % GameState.glyph("move"),
 		"镜头  %s" % GameState.glyph("camera"),
-		"跳跃  %s" % GameState.glyph("jump"),
+		("跳跃  %s" % GameState.glyph("jump")) if GameState.allow_jump else "",
 		"%s  %s" % [ability, GameState.glyph("ability")],
 		"加速  %s" % GameState.glyph("boost"),
 		"抓取/投掷  %s" % GameState.glyph("grab"),

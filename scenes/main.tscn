@@ -2,16 +2,15 @@
 
 [ext_resource type="Script" path="res://scripts/game/main.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/voxel/voxel_world.gd" id="2"]
-[ext_resource type="Script" path="res://scripts/levels/test_room.gd" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4"]
 [ext_resource type="Script" path="res://scripts/player/camera_rig.gd" id="5"]
 [ext_resource type="Script" path="res://scripts/ui/hud.gd" id="6"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
-sky_top_color = Color(0.32, 0.52, 0.86, 1)
-sky_horizon_color = Color(0.78, 0.72, 0.9, 1)
-ground_bottom_color = Color(0.16, 0.14, 0.24, 1)
-ground_horizon_color = Color(0.78, 0.72, 0.9, 1)
+sky_top_color = Color(0.22, 0.52, 0.95, 1)
+sky_horizon_color = Color(0.7, 0.86, 1, 1)
+ground_bottom_color = Color(0.72, 0.84, 1, 1)
+ground_horizon_color = Color(0.7, 0.86, 1, 1)
 sun_angle_max = 20.0
 
 [sub_resource type="Sky" id="Sky_1"]
@@ -21,7 +20,7 @@ sky_material = SubResource("Sky_mat")
 background_mode = 2
 sky = SubResource("Sky_1")
 ambient_light_source = 3
-ambient_light_energy = 1.15
+ambient_light_energy = 1.0
 tonemap_mode = 4
 ssao_enabled = true
 ssao_radius = 1.2
@@ -30,8 +29,8 @@ glow_enabled = true
 glow_intensity = 0.7
 glow_bloom = 0.08
 fog_enabled = true
-fog_light_color = Color(0.72, 0.7, 0.9, 1)
-fog_density = 0.004
+fog_light_color = Color(0.74, 0.86, 1, 1)
+fog_density = 0.0022
 
 [sub_resource type="CameraAttributesPractical" id="CamAttr_1"]
 
@@ -46,16 +45,12 @@ camera_attributes = SubResource("CamAttr_1")
 position = Vector3(0, 20, 0)
 rotation_degrees = Vector3(-55, -35, 0)
 light_color = Color(1, 0.95, 0.86, 1)
-light_energy = 1.3
+light_energy = 1.45
 shadow_enabled = true
 directional_shadow_max_distance = 60.0
 
 [node name="VoxelWorld" type="Node3D" parent="."]
 script = ExtResource("2")
-
-[node name="TestRoom" type="Node3D" parent="."]
-script = ExtResource("3")
-world_path = NodePath("../VoxelWorld")
 
 [node name="Player" parent="." instance=ExtResource("4")]
 

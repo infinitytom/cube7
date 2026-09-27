@@ -65,5 +65,6 @@ func _physics_process(_delta: float) -> void:
 			world.set_block(voxel_pos, fill_block)
 			_hint.visible = false
 			GameState.shake.emit(0.2)
+			Sfx.play("success", Vector3.INF, -2.0, 0.0)
 			filled.emit()
 			return

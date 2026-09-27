@@ -34,6 +34,7 @@ func _check() -> void:
 		world.try_break_any(p)
 	GameState.shake.emit(0.3)
 	GameState.say("回路接通！能量门打开了。")
+	Sfx.play("success", Vector3.INF, -2.0, 0.0)
 	powered.emit()
 
 ## 在能量源与接收器的包围盒内做广度优先搜索

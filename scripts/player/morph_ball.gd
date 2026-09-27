@@ -62,6 +62,8 @@ var _teleport := false
 var _teleport_pos := Vector3.ZERO
 var _reset_rot := false
 var _shape_node: CollisionShape3D
+var _no_snap := 0.0          ## 被弹跳垫等发射后的一小段时间内不贴地
+var _roll_sound: AudioStreamPlayer3D
 
 func _ready() -> void:
 	contact_monitor = true
@@ -69,7 +71,7 @@ func _ready() -> void:
 	continuous_cd = true
 	can_sleep = false
 	collision_layer = 2
-	collision_mask = 1 | 4
+	collision_mask = 1 | 4 | 8
 	physics_material_override = PhysicsMaterial.new()
 	_shape_node = get_node_or_null("CollisionShape3D")
 	if _shape_node == null:
@@ -79,6 +81,15 @@ func _ready() -> void:
 	_visual_root.name = "Visual"
 	add_child(_visual_root)
 	_build_visuals()
+	_roll_sound = AudioStreamPlayer3D.new()
+	var rs := load("res://audio/sfx/roll.ogg") as AudioStreamOggVorbis
+	if rs:
+		rs.loop = true
+		_roll_sound.stream = rs
+		_roll_sound.bus = "SFX"
+		_roll_sound.volume_db = -80.0
+		add_child(_roll_sound)
+		_roll_sound.play()
 	GameState.player = self
 	world = get_tree().get_first_node_in_group("voxel_world") as VoxelWorld
 	apply_form(BALL, false)
@@ -174,6 +185,7 @@ func apply_form(i: int, fx: bool) -> void:
 		var tw := create_tween()
 		tw.tween_property(_visual_root, "scale", Vector3.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		_burst(f.color)
+		Sfx.play("morph", Vector3.INF, -4.0)
 	GameState.form_changed.emit(i)
 
 # ---------------------------------------------------------------- 物理
@@ -185,6 +197,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		state.linear_velocity = Vector3.ZERO
 		state.angular_velocity = Vector3.ZERO
 		_prev_vel = Vector3.ZERO
+		reset_physics_interpolation.call_deferred()
 		return
 	if _reset_rot:
 		_reset_rot = false
@@ -213,7 +226,7 @@ func _physics_process(delta: float) -> void:
 	_ability_cd -= delta
 	if not _impacts.is_empty():
 		_handle_impacts()
-	if global_position.y < GameState.KILL_Y:
+	if global_position.y < GameState.kill_y:
 		GameState.respawn()
 		return
 
@@ -239,7 +252,7 @@ func _physics_process(delta: float) -> void:
 			apply_central_force(d * a * mass * mul)
 
 	# 跳跃
-	var jump := Input.is_action_just_pressed("jump") and not debug_override
+	var jump := Input.is_action_just_pressed("jump") and not debug_override and GameState.allow_jump
 	if jump and _ground_timer > 0.0:
 		_ground_timer = 0.0
 		linear_velocity.y = maxf(linear_velocity.y, 0.0)
@@ -247,6 +260,14 @@ func _physics_process(delta: float) -> void:
 
 	if _ground_timer > 0.0:
 		_puffs = 0
+	_no_snap -= delta
+	_snap_to_ground()
+	# 滚动声：贴地时随速度变大、变尖
+	if _roll_sound and _roll_sound.stream:
+		var sp := linear_velocity.length() if _ground_timer > 0.0 and not lock_rotation else 0.0
+		var vol := clampf(sp / 9.0, 0.0, 1.0)
+		_roll_sound.volume_db = linear_to_db(maxf(vol * 0.8, 0.0001))
+		_roll_sound.pitch_scale = 0.7 + vol * 0.7
 
 	# 抓着的物件跟随头顶
 	if _held and is_instance_valid(_held):
@@ -259,6 +280,29 @@ func _physics_process(delta: float) -> void:
 		var target := Basis.looking_at(_move_dir, Vector3.UP)
 		_visuals[form].basis = _visuals[form].basis.slerp(target, 1.0 - exp(-12.0 * delta))
 
+## 贴地：刚离开地面（坡顶、小台阶）时，如果正下方很近处还有地面，就压回去，
+## 避免高速过坡顶时整个飞出去。真正的断崖（下方没有地面）不受影响。
+func _snap_to_ground() -> void:
+	if grounded or _no_snap > 0.0 or _magnet_stuck or form == BUBBLE:
+		return
+	if _ground_timer <= 0.0:
+		return
+	if linear_velocity.y <= 0.0:
+		return
+	var r: float = FORMS[form].radius
+	var q := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3.DOWN * (r + 0.45), 1 | 8, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		var n: Vector3 = hit.normal
+		# 去掉离开地面方向的速度分量
+		var away := linear_velocity.dot(n)
+		if away > 0.0:
+			linear_velocity -= n * away
+
+## 被弹跳垫、光桥发射器等主动发射时调用
+func launched(secs := 0.5) -> void:
+	_no_snap = secs
+
 func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 	var pressed := _ability_pressed()
 	var held := _ability_held()
@@ -269,6 +313,7 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 				var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
 				apply_central_impulse((_move_dir * DASH_SPEED - vh) * mass)
 				_burst(f.color)
+				Sfx.play("dash", global_position, -2.0)
 		DRILL:
 			if held:
 				_drill_timer -= delta
@@ -296,9 +341,9 @@ func _drill(dir: Vector3) -> void:
 		return
 	var pts: Array[Vector3] = []
 	if dir.length() < 0.15:
-		# 静止时向下钻
-		for ox in [-0.25, 0.25]:
-			for oz in [-0.25, 0.25]:
+		# 静止时向下钻：以球心为中心钻 3×3 格（1.5 米见方），保证球能掉下去
+		for ox in [-0.45, 0.0, 0.45]:
+			for oz in [-0.45, 0.0, 0.45]:
 				pts.append(global_position + Vector3(ox, -0.7, oz))
 	else:
 		# 钻出约 1.5m 宽、2m 高的隧道：球能通过，镜头也有空间
@@ -306,12 +351,18 @@ func _drill(dir: Vector3) -> void:
 		for oy in [-0.25, 0.2, 0.6, 1.05]:
 			for os in [-0.45, 0.0, 0.45]:
 				pts.append(global_position + _move_dir * 0.75 + Vector3.UP * oy + side * os)
+	var down := dir.length() < 0.15
 	var broke := false
 	for p in pts:
-		if world.try_break(world.world_to_voxel(p), "drill", 1.0):
+		var v := world.world_to_voxel(p)
+		# 往下只能钻松土/砂：普通地面钻不下去，避免把自己困在坑里
+		if down and Blocks.soft[world.get_block(v)] == 0:
+			continue
+		if world.try_break(v, "drill", 1.0):
 			broke = true
 	if broke:
 		GameState.shake.emit(0.06)
+		Sfx.play("drill", global_position, -6.0, 0.1)
 
 func _update_magnet(held: bool, dir: Vector3, f: Dictionary) -> void:
 	var was := _magnet_stuck
@@ -359,6 +410,8 @@ func _handle_impacts() -> void:
 		var radius := clampf(0.45 + speed * 0.065, 0.5, 1.3)
 		var center: Vector3 = imp.point - n * 0.25
 		var count := world.break_sphere(center, radius, "impact", speed)
+		if count == 0 and speed > 4.0:
+			Sfx.play("thud", global_position, linear_to_db(clampf(speed / 12.0, 0.2, 1.0)), 0.1)
 		if count >= 2:
 			# 撞穿：保留大部分速度继续前进
 			linear_velocity = (imp.vel as Vector3) * 0.8
@@ -388,6 +441,7 @@ func toggle_grab() -> void:
 			throw_dir = Vector3(-sin(yaw), 0, -cos(yaw))
 		# 轻抛：约 2~3 米远，配合插槽吸附更容易放准
 		_release_held(throw_dir * 3.5 + Vector3.UP * 3.0 + linear_velocity * 0.4)
+		Sfx.play("throw", global_position, -4.0)
 		return
 	var best: Node3D = null
 	var best_d := GRAB_RANGE
@@ -399,6 +453,7 @@ func toggle_grab() -> void:
 	if best:
 		_held = best
 		best.call("set_held", true)
+		Sfx.play("grab", global_position, -4.0)
 
 func _release_held(vel: Vector3) -> void:
 	if _held and is_instance_valid(_held):

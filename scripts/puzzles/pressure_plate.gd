@@ -26,6 +26,7 @@ func _physics_process(delta: float) -> void:
 			world.try_break_any(p)
 		GameState.shake.emit(0.3)
 		GameState.say("咔哒——闸门开了。重量才是正义。")
+		Sfx.play("success", Vector3.INF, -2.0, 0.0)
 		pressed.emit()
 	elif player_on:
 		_hint_t -= delta

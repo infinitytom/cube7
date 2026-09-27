@@ -25,4 +25,5 @@ func _on_player_entered() -> void:
 	GameState.set_checkpoint(global_position + Vector3.UP * 0.2, lock_form, locks)
 	if not _active:
 		_active = true
+		Sfx.play("checkpoint", global_position, -6.0, 0.0)
 		(_beacon.mesh as CylinderMesh).material = _glow_mat(Color("5dffb0"), 0.7)

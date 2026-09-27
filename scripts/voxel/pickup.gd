@@ -66,6 +66,8 @@ func _process(delta: float) -> void:
 func _collect() -> void:
 	if kind == "coin":
 		GameState.add_coins(1)
+		Sfx.play("coin", Vector3.INF, -8.0, 0.03)
 	else:
 		GameState.add_energy(1)
+		Sfx.play("energy", Vector3.INF, -8.0, 0.05)
 	queue_free()

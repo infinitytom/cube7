@@ -8,11 +8,12 @@ signal nova_say(text: String)
 @warning_ignore("unused_signal")
 signal form_changed(index: int)
 signal device_changed(kind: String)
+signal form_unlocked(index: int)
+signal fragments_changed(value: int)
 @warning_ignore("unused_signal")
 signal shake(amount: float)
 
 const ENERGY_PER_SHIELD := 10
-const KILL_Y := -6.0
 
 var coins := 0
 var energy := 0
@@ -30,6 +31,37 @@ var checkpoint_form := -1          ## 复活时强制的形态（-1 = 不改）
 var checkpoint_locks_form := false
 var device := "kbm"                ## "ps" / "xbox" / "kbm"
 var unlocked_forms: Array[bool] = [true, true, true, true, true]
+var kill_y := -6.0                 ## 掉到这个高度以下就回检查点（由关卡设置）
+var allow_jump := false            ## 默认不能跳（致敬平衡球，高低差靠坡道和形态解决）
+var fragments := 0
+var level_complete := false
+var fragments_total := 0
+var fragment_logs: PackedStringArray = []
+
+## 关卡开始时调用：重置收集进度
+func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count: int) -> void:
+	unlocked_forms = forms.duplicate()
+	allow_jump = jump
+	kill_y = kill
+	fragments = 0
+	level_complete = false
+	fragments_total = fragment_count
+	fragment_logs = []
+	coins = 0
+	energy = 0
+	shield = max_shield
+	blocks_broken = 0
+
+func unlock_form(i: int) -> void:
+	if unlocked_forms[i]:
+		return
+	unlocked_forms[i] = true
+	form_unlocked.emit(i)
+
+func add_fragment(log_text: String) -> void:
+	fragments += 1
+	fragment_logs.append(log_text)
+	fragments_changed.emit(fragments)
 
 # ---------------------------------------------------------------- 收集
 
@@ -55,6 +87,7 @@ func damage(n := 1) -> void:
 		respawn()
 
 func respawn() -> void:
+	Sfx.play("respawn", Vector3.INF, -4.0)
 	if player and player.has_method("respawn_at"):
 		player.respawn_at(checkpoint, checkpoint_form, checkpoint_locks_form)
 

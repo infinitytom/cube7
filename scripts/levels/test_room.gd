@@ -21,6 +21,8 @@ var crystal: UsableItem
 
 func build() -> void:
 	world = get_node(world_path) as VoxelWorld
+	world.setup(Vector3i(112, 32, 64))
+	GameState.reset_for_level([true, true, true, true, true] as Array[bool], true, -6.0, 0)
 	_build_terrain()
 	world.rebuild_all()
 	_build_logic()

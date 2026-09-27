@@ -15,7 +15,7 @@ func _ready() -> void:
 	add_to_group("usable_item")
 	mass = 1.2
 	collision_layer = 4
-	collision_mask = 1 | 2 | 4
+	collision_mask = 1 | 2 | 4 | 8
 	continuous_cd = true
 	var cs := CollisionShape3D.new()
 	var box := BoxShape3D.new()
@@ -53,7 +53,7 @@ func _process(delta: float) -> void:
 	_outline.scale = Vector3.ONE * (1.0 + 0.06 * sin(_t * 5.0))
 
 func _physics_process(_delta: float) -> void:
-	if not held and global_position.y < GameState.KILL_Y:
+	if not held and global_position.y < GameState.kill_y:
 		global_position = home
 		linear_velocity = Vector3.ZERO
 		GameState.say("晶块掉下去了，我把它传送回原处。")
@@ -62,4 +62,4 @@ func set_held(v: bool) -> void:
 	held = v
 	freeze = v
 	collision_layer = 0 if v else 4
-	collision_mask = 0 if v else (1 | 2 | 4)
+	collision_mask = 0 if v else (1 | 2 | 4 | 8)
