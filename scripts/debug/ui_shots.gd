@@ -35,7 +35,7 @@ func _key(k: Key) -> void:
 func _run() -> void:
 	for i in SaveGame.SLOTS:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_%d.json" % i))
-	await _wait(3.0)
+	await _wait(4.5)
 	await _save("u01_title")
 	await _key(KEY_SPACE)
 	await _wait(0.8)
@@ -50,7 +50,15 @@ func _run() -> void:
 	(title.get("_settings") as Control).call("open")
 	await _wait(0.5)
 	await _save("u04_settings")
+	(title.get("_settings") as Control).visible = false
+	title.call("_open_donate")
+	await _wait(0.6)
+	await _save("u04b_donate")
 	title.call("_start_new", 0)
+	if OS.get_cmdline_user_args().has("--titleonly"):
+		await _wait(1.0)
+		get_tree().quit()
+		return
 	await _wait(2.0)
 	for t in [1.5, 5.0, 7.0, 5.0, 6.0, 6.0]:
 		await _wait(t)
@@ -68,4 +76,11 @@ func _run() -> void:
 	(hud.get("_pause") as Node).call("open")
 	await _wait(0.6)
 	await _save("u08_pause")
+	(hud.get("_pause") as Node).call("close")
+	await _wait(0.3)
+	GameState.coins = 128
+	GameState.fragments = 2
+	GameState.level_cleared.emit()
+	await _wait(2.0)
+	await _save("u09_clear")
 	get_tree().quit()

@@ -73,6 +73,14 @@ func set_flag(k: String, v = true) -> void:
 func flag(k: String) -> bool:
 	return not data.is_empty() and bool((data.get("flags", {}) as Dictionary).get(k, false))
 
+## 任意一个存档位设置过这个标记（例如 "gh_clear" = 通关过）
+func any_flag(k: String) -> bool:
+	for i in SLOTS:
+		var d := read(i)
+		if not d.is_empty() and bool((d.get("flags", {}) as Dictionary).get(k, false)):
+			return true
+	return false
+
 func has_fragment(id: String) -> bool:
 	return not data.is_empty() and id in (data.get("fragments", []) as Array)
 

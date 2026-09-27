@@ -148,6 +148,11 @@ static func glyph(action: String, size := 20) -> PanelContainer:
 	pc.add_child(l)
 	return pc
 
+static func make_spacer(w: float) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size.x = w
+	return c
+
 ## “按钮 + 说明”的一行提示
 static func prompt(action: String, desc: String, size := 20) -> HBoxContainer:
 	var h := HBoxContainer.new()

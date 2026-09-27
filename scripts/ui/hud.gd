@@ -45,6 +45,7 @@ func _ready() -> void:
 	_build_prompts()
 	_build_title_card()
 	_build_save_toast()
+	GameState.level_cleared.connect(_show_clear)
 	_pause = PauseMenu.new()
 	add_child(_pause)
 	GameState.coins_changed.connect(func(_v: int) -> void: _refresh_stats(true))
@@ -62,6 +63,78 @@ func _ready() -> void:
 	_refresh_prompts()
 	if GameState.objective_index >= 0:
 		_on_objective(GameState.objective_index, GameState.objective_text, GameState.objective_pos)
+
+# ================================================================ 通关结算
+
+func _show_clear() -> void:
+	if Flow.mode == "debug" or get_tree().paused:
+		return
+	get_tree().paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var dim := ColorRect.new()
+	dim.color = Color(0.01, 0.02, 0.05, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.add_child(dim)
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG_SOLID, UIKit.ACCENT2, 20, 36, 2))
+	UIKit.place(p, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-330, -250, 330, 250))
+	_root.add_child(p)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 14)
+	p.add_child(v)
+	var small := UIKit.label("区域 1  ·  翠绿温室", 20, UIKit.ACCENT, true)
+	small.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(small)
+	var big := UIKit.label("区域完成", 52, UIKit.TEXT, true)
+	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(big)
+	SaveGame.write()
+	var rows := [
+		["coin", UIKit.ACCENT2, "金币", str(GameState.coins)],
+		["fragment", Color("c89bff"), "记忆碎片", "%d / 3" % GameState.fragments],
+		["save", UIKit.ACCENT, "游戏时间", SaveGame.format_time(float(SaveGame.data.get("play_time", 0.0)))],
+	]
+	for r in rows:
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 12)
+		h.add_child(UIKit.make_spacer(80))
+		h.add_child(UIIcon.make(r[0], r[1], 28))
+		var l := UIKit.label(r[2], 24, UIKit.DIM)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		h.add_child(l)
+		h.add_child(UIKit.label(r[3], 26, UIKit.TEXT, true))
+		h.add_child(UIKit.make_spacer(80))
+		v.add_child(h)
+		h.modulate.a = 0.0
+		create_tween().tween_property(h, "modulate:a", 1.0, 0.3).set_delay(0.4 + rows.find(r) * 0.25)
+	var btns := HBoxContainer.new()
+	btns.alignment = BoxContainer.ALIGNMENT_CENTER
+	btns.add_theme_constant_override("separation", 16)
+	v.add_child(btns)
+	var stay := Button.new()
+	stay.text = "继续探索"
+	UIKit.juice(stay)
+	stay.pressed.connect(func() -> void:
+		dim.queue_free()
+		p.queue_free()
+		get_tree().paused = false
+		if DisplayServer.get_name() != "headless":
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
+	var home := Button.new()
+	home.text = "返回标题"
+	UIKit.juice(home)
+	home.pressed.connect(func() -> void:
+		SaveGame.write()
+		Flow.goto_title())
+	btns.add_child(stay)
+	btns.add_child(home)
+	home.grab_focus.call_deferred()
+	p.pivot_offset = Vector2(330, 250)
+	p.scale = Vector2(0.9, 0.9)
+	p.modulate.a = 0.0
+	var tw := create_tween().set_parallel()
+	tw.tween_property(p, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(p, "modulate:a", 1.0, 0.25)
 
 # ================================================================ 构建
 

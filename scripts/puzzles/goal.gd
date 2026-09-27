@@ -14,4 +14,6 @@ func _on_player_entered() -> void:
 	SaveGame.write()
 	Sfx.play("level_clear", Vector3.INF, 0.0, 0.0)
 	Music.duck(4.0, 0.1)
-	GameState.say("测试区全部通过！金币 %d，拆掉方块 %d 个。PIX，你比我想象的靠谱一点。" % [GameState.coins, GameState.blocks_broken])
+	GameState.say("中枢塔的信号……回来了。PIX，你比我想象的靠谱一点。")
+	await get_tree().create_timer(4.5).timeout
+	GameState.level_cleared.emit()

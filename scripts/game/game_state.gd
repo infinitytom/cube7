@@ -8,6 +8,7 @@ signal nova_say(text: String)
 @warning_ignore("unused_signal")
 signal form_changed(index: int)
 signal device_changed(kind: String)
+signal level_cleared
 signal form_unlocked(index: int)
 signal fragments_changed(value: int)
 signal objective_changed(index: int, text: String, pos: Vector3)
@@ -133,9 +134,9 @@ func _input(event: InputEvent) -> void:
 		device_changed.emit(device)
 
 const GLYPHS := {
-	"ps": {"jump": "✕", "ability": "□", "grab": "○", "view_toggle": "△", "boost": "R2", "form": "L1/R1", "form_direct": "十字键", "respawn": "Create", "pause": "Options", "move": "左摇杆", "camera": "右摇杆"},
-	"xbox": {"jump": "A", "ability": "X", "grab": "B", "view_toggle": "Y", "boost": "RT", "form": "LB/RB", "form_direct": "十字键", "respawn": "View", "pause": "Menu", "move": "左摇杆", "camera": "右摇杆"},
-	"kbm": {"jump": "空格", "ability": "左键", "grab": "E", "view_toggle": "V", "boost": "Shift", "form": "滚轮", "form_direct": "1-5", "respawn": "R", "pause": "Esc", "move": "WASD", "camera": "鼠标"},
+	"ps": {"jump": "✕", "ability": "□", "grab": "○", "view_toggle": "△", "boost": "R2", "form": "L1/R1", "form_direct": "十字键", "respawn": "Create", "pause": "Options", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "✕", "ui_cancel": "○"},
+	"xbox": {"jump": "A", "ability": "X", "grab": "B", "view_toggle": "Y", "boost": "RT", "form": "LB/RB", "form_direct": "十字键", "respawn": "View", "pause": "Menu", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "A", "ui_cancel": "B"},
+	"kbm": {"jump": "空格", "ability": "左键", "grab": "E", "view_toggle": "V", "boost": "Shift", "form": "滚轮", "form_direct": "1-5", "respawn": "R", "pause": "Esc", "move": "WASD", "camera": "鼠标", "ui_accept": "Enter", "ui_cancel": "Esc"},
 }
 
 func glyph(action: String) -> String:
