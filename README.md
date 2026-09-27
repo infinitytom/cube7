@@ -63,3 +63,10 @@ godot --headless --path . -- --autotest=greenhouse   # 区域 1 整关测试，�
 
 `audio/` 下的音乐和音效由 `tools/synth_audio.py` 程序合成（numpy + ffmpeg）。
 区域音乐分三层（底层 / 旋律 / 明亮）同步循环，由 `scripts/game/music.gd` 按游戏状态自动混音。
+
+## 画风与素材（v0.6）
+- 方向：**可爱外表 + 科幻内核**。Kenney 新版粉彩配色——薄荷绿草地、珊瑚色泥土、淡紫科技件、阳光黄点缀。
+- 现成素材放在 `assets/`，统一从 `scripts/art/kit.gd`（`Kit.model()` / `Kit.mesh()`）取用；授权见 `assets/CREDITS.md`（Kenney CC0 + OFL 字体）。
+- 树、花、蘑菇、石头是 `Prop`（`scripts/props/prop.gd`）：高速滚撞 / 冲撞 / 钻 / 下砸会“啵”地弹飞并掉金币。
+- 界面字体：Fredoka（英文数字）+ 站酷快乐体（中文）；按键提示使用 Kenney Input Prompts 真实按键图标，并直接嵌在 NOVA 的台词里。
+- 素材预览：`godot --path . --rendering-driver opengl3 -s res://tools/gallery.gd -- res://assets/kenney/platformer /tmp/out.png`

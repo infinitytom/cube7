@@ -33,7 +33,7 @@ var _home_set := false
 var ai := true            ## 自动测试时可关掉 AI，只保留受击判定
 
 const GRAVITY := 22.0
-const EYE_CALM := Color("4dfcff")
+const EYE_CALM := Color("2e3270")
 const EYE_ANGRY := Color("ff4d4d")
 
 func _ready() -> void:
@@ -63,9 +63,10 @@ func _ready() -> void:
 func _build_visual() -> void:
 	_body = Node3D.new()
 	add_child(_body)
-	var rust := _mat(Color("8a4b32"), 0.0, 0.8)
-	var dark := _mat(Color("3a2a26"), 0.0, 0.7)
-	var steel := _mat(Color("b8c4d6"), 0.0, 0.35, 0.6)
+	# 可爱配色：珊瑚色身体、淡紫小腿、奶白色盾牌（和 Kenney 素材同一套粉彩）
+	var rust := _mat(Color("f28b6c"), 0.0, 0.55)
+	var dark := _mat(Color("8e6ee0"), 0.0, 0.5)
+	var steel := _mat(Color("e4e7ff"), 0.0, 0.3, 0.2)
 	var core := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.8, 0.62, 0.8)
@@ -90,15 +91,24 @@ func _build_visual() -> void:
 	shield.material_override = steel
 	shield.position = Vector3(0, 0.44, -0.45)
 	_body.add_child(shield)
-	# 独眼（在盾牌上方的一条缝里）
-	_eye_mat = _mat(EYE_CALM, 4.0)
-	var eye := MeshInstance3D.new()
-	var em := BoxMesh.new()
-	em.size = Vector3(0.36, 0.08, 0.04)
-	eye.mesh = em
-	eye.material_override = _eye_mat
-	eye.position = Vector3(0, 0.62, -0.51)
-	_body.add_child(eye)
+	# 一只圆滚滚的大眼睛（眼白 + 会变色的瞳孔）
+	var white := MeshInstance3D.new()
+	var wm := SphereMesh.new()
+	wm.radius = 0.15
+	wm.height = 0.3
+	white.mesh = wm
+	white.material_override = _mat(Color.WHITE, 0.0, 0.25)
+	white.position = Vector3(0, 0.78, -0.3)
+	_body.add_child(white)
+	_eye_mat = _mat(EYE_CALM, 1.0, 0.3)
+	var pupil := MeshInstance3D.new()
+	var pm := SphereMesh.new()
+	pm.radius = 0.075
+	pm.height = 0.15
+	pupil.mesh = pm
+	pupil.material_override = _eye_mat
+	pupil.position = Vector3(0, 0.79, -0.43)
+	_body.add_child(pupil)
 	# 四条小腿
 	for x in [-0.28, 0.28]:
 		for z in [-0.26, 0.26]:

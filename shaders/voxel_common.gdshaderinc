@@ -6,10 +6,10 @@ varying vec3 v_wpos;
 varying vec3 v_wnorm;
 varying float v_type;
 
-uniform vec3 dirt_color : source_color = vec3(0.69, 0.47, 0.30);
+uniform vec3 dirt_color : source_color = vec3(0.925, 0.604, 0.455);
 uniform float bevel_width = 0.075;
-uniform float bevel_dark = 0.22;
-uniform float speckle = 0.07;
+uniform float bevel_dark = 0.14;
+uniform float speckle = 0.035;
 
 float hash13(vec3 p) {
 	p = fract(p * 0.1031);

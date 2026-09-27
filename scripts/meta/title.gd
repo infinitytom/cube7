@@ -1,7 +1,7 @@
 extends Node3D
 ## 开始界面。
 ## 画面：黄昏光线下的浮岛全景，镜头缓慢环绕；主角 PIX 悬浮在镜头前；旋转的立方体徽记 + 流光标题。
-## 流程：黑场淡入 → 标志依次浮现 → 按任意键 → 主菜单（继续 / 新游戏 / 读取 / 设置 / [通关后] 赞赏作者 / 退出）
+## 流程：黑场淡入 → 标志依次浮现 → 按任意键 → 主菜单（继续 / 新游戏 / 读取 / 设置 / 赞赏作者 / 退出）
 
 @onready var world: VoxelWorld = $VoxelWorld
 
@@ -27,6 +27,7 @@ var _t := 0.0
 var _slot_mode := "new"
 var _hero: Node3D
 var _hero_ring: Node3D
+var _hero_eyes: Array[MeshInstance3D] = []
 var _logo_y := 96.0
 
 const CENTER := Vector3(32, 10, 25)
@@ -70,7 +71,7 @@ func _golden_hour() -> void:
 		var env := we.environment.duplicate() as Environment
 		var sky := env.sky.duplicate() as Sky
 		var mat := sky.sky_material.duplicate() as ProceduralSkyMaterial
-		mat.sky_top_color = Color(0.16, 0.38, 0.82)
+		mat.sky_top_color = Color(0.24, 0.5, 1.0)
 		mat.sky_horizon_color = Color(1.0, 0.86, 0.74)
 		mat.ground_horizon_color = Color(1.0, 0.86, 0.74)
 		mat.ground_bottom_color = Color(0.62, 0.7, 0.9)
@@ -103,8 +104,11 @@ func _process(delta: float) -> void:
 		_shimmer.set_shader_parameter("sweep", lerpf(-200.0, 1300.0, clampf(cyc, 0.0, 1.0)))
 	if _hero:
 		_hero.position = Vector3(2.7, -1.05 + sin(_t * 1.6) * 0.07, -6.4)
-		_hero.rotation = Vector3(sin(_t * 0.9) * 0.12, _t * 0.6, sin(_t * 0.7) * 0.1)
-		_hero_ring.rotation.z = _t * 1.8
+		_hero.rotation = Vector3(sin(_t * 0.9) * 0.1, sin(_t * 0.5) * 0.35, sin(_t * 0.7) * 0.08)
+		_hero_ring.rotation.x = _t * 1.6
+		var blink := 0.12 if fmod(_t, 3.7) < 0.12 else 1.0
+		for e in _hero_eyes:
+			e.scale.y = blink
 
 ## 主角特写：和经典作品的标题画面一样，主角就在镜头前
 func _build_hero() -> void:
@@ -140,6 +144,37 @@ func _build_hero() -> void:
 		ring.material_override = glow
 		ring.rotation_degrees.x = rx
 		_hero_ring.add_child(ring)
+	# 屏幕脸：深色面罩 + 两只发光的眼睛（朝着镜头）
+	var face := Node3D.new()
+	_hero.add_child(face)
+	face.rotation_degrees.y = 157.0
+	var visor := MeshInstance3D.new()
+	var vm := SphereMesh.new()
+	vm.radius = 0.2
+	vm.height = 0.24
+	visor.mesh = vm
+	var vmat := StandardMaterial3D.new()
+	vmat.albedo_color = Color("1b1f3b")
+	vmat.roughness = 0.15
+	visor.material_override = vmat
+	visor.scale = Vector3(1.35, 0.95, 0.35)
+	visor.position = Vector3(0, 0.1, -0.43)
+	visor.rotation_degrees.x = -12.0
+	face.add_child(visor)
+	var em := StandardMaterial3D.new()
+	em.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	em.albedo_color = Color("9ff0ff")
+	for x in [-0.085, 0.085]:
+		var e := MeshInstance3D.new()
+		var cm := CapsuleMesh.new()
+		cm.radius = 0.034
+		cm.height = 0.13
+		e.mesh = cm
+		e.material_override = em
+		e.position = Vector3(x, 0.115, -0.505)
+		e.rotation_degrees.x = -12.0
+		face.add_child(e)
+		_hero_eyes.append(e)
 	var light := OmniLight3D.new()
 	light.light_color = Color("46c3ff")
 	light.light_energy = 0.7
@@ -178,7 +213,7 @@ func _build_ui() -> void:
 	# 暗角
 	var vg := Gradient.new()
 	vg.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
-	vg.colors = PackedColorArray([Color(0.02, 0.03, 0.08, 0.0), Color(0.02, 0.03, 0.08, 0.05), Color(0.02, 0.03, 0.08, 0.62)])
+	vg.colors = PackedColorArray([Color(0.02, 0.03, 0.08, 0.0), Color(0.02, 0.03, 0.08, 0.05), Color(0.05, 0.05, 0.2, 0.4)])
 	var vt := GradientTexture2D.new()
 	vt.gradient = vg
 	vt.fill = GradientTexture2D.FILL_RADIAL
@@ -252,7 +287,7 @@ func _build_ui() -> void:
 	_ui.add_child(_hints)
 	_refresh_glyphs()
 	# 版本号
-	var ver := UIKit.label("原型 v0.5  ·  区域 1", 15, Color(1, 1, 1, 0.45))
+	var ver := UIKit.label("原型 v0.6  ·  区域 1", 15, Color(1, 1, 1, 0.45))
 	UIKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-280, -52, -40, -26))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ui.add_child(ver)
@@ -509,8 +544,7 @@ func _show_menu() -> void:
 		_logo_show(false)
 		_dim_show(true)
 		_settings.open())
-	if SaveGame.any_flag("gh_clear"):
-		_item("赞赏作者", _open_donate, "", UIKit.ACCENT2)
+	_item("赞赏作者", _open_donate, "", UIKit.ACCENT2)
 	_item("退出游戏", func() -> void: get_tree().quit())
 	first.grab_focus.call_deferred()
 	# 菜单项依次滑入
@@ -646,10 +680,10 @@ func _open_donate() -> void:
 	v.add_theme_constant_override("separation", 12)
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	_donate.add_child(v)
-	var t := UIKit.label("谢谢你玩到了最后", 32, UIKit.TEXT, true)
+	var t := UIKit.label("喜欢《立方-7》吗？", 32, UIKit.TEXT, true)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
-	var body := UIKit.label("如果这段小小的旅程让你开心，\n可以请作者喝一杯咖啡。游戏本身完全免费。", 19, UIKit.DIM)
+	var body := UIKit.label("游戏完全免费。如果它让你开心，\n可以请作者喝一杯咖啡，支持继续开发～", 19, UIKit.DIM)
 	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(body)
 	var qr := TextureRect.new()

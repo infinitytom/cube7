@@ -2,34 +2,45 @@ class_name UIKit
 extends RefCounted
 ## 统一的界面风格：配色、字体、面板、按钮、手柄按键图标。所有界面都从这里取样式。
 
-const BG := Color(0.05, 0.07, 0.12, 0.82)
-const BG_SOLID := Color(0.06, 0.08, 0.13, 0.96)
-const LINE := Color(1, 1, 1, 0.10)
-const ACCENT := Color("4fd1ff")
-const ACCENT2 := Color("ffd166")
-const TEXT := Color("eef3ff")
-const DIM := Color("9aa7c2")
-const DANGER := Color("ff6b8a")
-const GOOD := Color("7dffb0")
+## 可爱科幻配色：深靛蓝底 + 天空蓝 / 阳光黄点缀（和 Kenney 粉彩素材一致）
+const BG := Color(0.14, 0.15, 0.36, 0.86)
+const BG_SOLID := Color(0.16, 0.17, 0.39, 0.97)
+const LINE := Color(1, 1, 1, 0.16)
+const ACCENT := Color("62dcff")
+const ACCENT2 := Color("ffd769")
+const TEXT := Color("fdfaff")
+const DIM := Color("bcc0ea")
+const DANGER := Color("ff7a9c")
+const GOOD := Color("66daa3")
 
-const FONT_NAMES := ["Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", "sans-serif"]
+## 字体：英文数字用圆润的 Fredoka，中文用站酷快乐体（都是 OFL 开源字体）
+const FONT_LATIN := "res://assets/fonts/Fredoka.ttf"
+const FONT_CJK := "res://assets/fonts/ZCOOLKuaiLe.ttf"
 
-static var _font: SystemFont
-static var _font_bold: SystemFont
+static var _font: Font
+static var _font_bold: Font
 static var _theme: Theme
 
-static func font(bold := false) -> SystemFont:
+static func font(bold := false) -> Font:
 	if _font == null:
-		_font = SystemFont.new()
-		_font.font_names = PackedStringArray(FONT_NAMES)
-		_font.font_weight = 400
-		_font.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
-		_font_bold = SystemFont.new()
-		_font_bold.font_names = PackedStringArray(FONT_NAMES)
-		_font_bold.font_weight = 700
+		var cjk := load(FONT_CJK) as FontFile
+		var latin := load(FONT_LATIN) as FontFile
+		var cjk_bold := FontVariation.new()
+		cjk_bold.base_font = cjk
+		cjk_bold.variation_embolden = 0.55
+		var reg := FontVariation.new()
+		reg.base_font = latin
+		reg.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 500}
+		reg.fallbacks = [cjk]
+		var bold_v := FontVariation.new()
+		bold_v.base_font = latin
+		bold_v.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 650}
+		bold_v.fallbacks = [cjk_bold]
+		_font = reg
+		_font_bold = bold_v
 	return _font_bold if bold else _font
 
-static func panel(bg := BG, border := LINE, radius := 14, pad := 18, border_w := 1) -> StyleBoxFlat:
+static func panel(bg := BG, border := LINE, radius := 20, pad := 18, border_w := 2) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
 	s.border_color = border
@@ -124,29 +135,57 @@ static func place(c: Control, anchors: Vector4, offsets: Vector4) -> void:
 	c.offset_right = offsets.z
 	c.offset_bottom = offsets.w
 
-## 手柄 / 键盘按键图标：PS 的四个符号各有颜色，Xbox 字母各有颜色，键盘显示为键帽
-static func glyph(action: String, size := 20) -> PanelContainer:
-	var text := GameState.glyph(action)
-	var col := Color(1, 1, 1, 0.9)
+## 手柄 / 键盘按键图标：用 Kenney Input Prompts 的真实按键图（PS5 / Xbox / 键鼠自动切换）
+const PROMPTS := {
+	"ps": {"jump": ["color_cross"], "ability": ["color_square"], "grab": ["color_circle"], "view_toggle": ["color_triangle"],
+		"boost": ["r2"], "form": ["l1", "r1"], "form_direct": ["dpad"], "respawn": ["create"], "pause": ["options"],
+		"move": ["stick_l"], "camera": ["stick_r"], "ui_accept": ["color_cross"], "ui_cancel": ["color_circle"]},
+	"xbox": {"jump": ["color_a"], "ability": ["color_x"], "grab": ["color_b"], "view_toggle": ["color_y"],
+		"boost": ["rt"], "form": ["lb", "rb"], "form_direct": ["dpad_all"], "respawn": ["view"], "pause": ["menu"],
+		"move": ["stick_l"], "camera": ["stick_r"], "ui_accept": ["color_a"], "ui_cancel": ["color_b"]},
+	"kbm": {"jump": ["keyboard_space"], "ability": ["mouse_left"], "grab": ["keyboard_e"], "view_toggle": ["keyboard_v"],
+		"boost": ["keyboard_shift"], "form": ["mouse_scroll"], "form_direct": ["keyboard_1", "keyboard_2", "keyboard_3"],
+		"respawn": ["keyboard_r"], "pause": ["keyboard_escape"], "move": ["keyboard_w", "keyboard_a", "keyboard_s", "keyboard_d"],
+		"camera": ["mouse_move"], "ui_accept": ["keyboard_enter"], "ui_cancel": ["keyboard_escape"]},
+}
+
+## 某个动作在当前设备上的图标路径（可能有多个，比如 L1 + R1）
+static func prompt_paths(action: String) -> PackedStringArray:
+	var out := PackedStringArray()
 	var dev := GameState.device
-	if dev == "ps":
-		col = {"✕": Color("7fb4ff"), "○": Color("ff7b8a"), "□": Color("e89cff"), "△": Color("5ff0b8")}.get(text, col)
-	elif dev == "xbox":
-		col = {"A": Color("7ddc6b"), "B": Color("ff6b6b"), "X": Color("5fa8ff"), "Y": Color("ffd24d")}.get(text, col)
-	var pc := PanelContainer.new()
-	var round := text.length() <= 1
-	var st := panel(Color(0, 0, 0, 0.45), col, 999 if round else 7, 0, 2)
-	st.content_margin_left = 6 if round else 9
-	st.content_margin_right = 6 if round else 9
-	st.content_margin_top = 1
-	st.content_margin_bottom = 2
-	st.shadow_size = 0
-	pc.add_theme_stylebox_override("panel", st)
-	var l := label(text, size - 4, col, true)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.custom_minimum_size.x = size - 6 if round else 0
-	pc.add_child(l)
-	return pc
+	for n in (PROMPTS[dev] as Dictionary).get(action, []):
+		out.append("res://assets/prompts/%s/%s.png" % [dev, n])
+	return out
+
+static func glyph(action: String, size := 20) -> Control:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 0)
+	var paths := prompt_paths(action)
+	if paths.is_empty():
+		var l := label(GameState.glyph(action), size - 2, TEXT, true)
+		h.add_child(l)
+		return h
+	for p in paths:
+		var t := TextureRect.new()
+		t.texture = load(p)
+		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		# 键盘图标的按键本体只占画布中间一小块，放大一些才和手柄图标一样醒目
+		var k := 1.9 if p.contains("/kbm/") else 1.35
+		t.custom_minimum_size = Vector2(size, size) * k
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_child(t)
+	return h
+
+## 富文本里内嵌的按键图标（NOVA 对话用）
+static func glyph_bbcode(action: String, size := 30) -> String:
+	var paths := prompt_paths(action)
+	if paths.is_empty():
+		return "【%s】" % GameState.glyph(action)
+	var s := ""
+	for p in paths:
+		s += "[img=%d]%s[/img]" % [int(size * (1.6 if p.contains("/kbm/") else 1.0)), p]
+	return s
 
 static func make_spacer(w: float) -> Control:
 	var c := Control.new()

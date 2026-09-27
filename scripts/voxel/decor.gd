@@ -10,11 +10,11 @@ var _pending := {}      # 名称 -> Array[Transform3D]
 var _pending_cells := {}
 
 const KINDS := {
-	"grass": {"tip": Color("8fdc4f"), "base": Color("3f8a2c")},
-	"flower_red": {"tip": Color("ff5d73"), "base": Color("4c9a36")},
-	"flower_yellow": {"tip": Color("ffd84d"), "base": Color("4c9a36")},
-	"flower_white": {"tip": Color("f4f1ff"), "base": Color("4c9a36")},
-	"flower_blue": {"tip": Color("7fb6ff"), "base": Color("4c9a36")},
+	"grass": {"tip": Color("9cf0c4"), "base": Color("46b884")},
+	"flower_red": {"tip": Color("ff7aa8"), "base": Color("46b884")},
+	"flower_yellow": {"tip": Color("ffd769"), "base": Color("46b884")},
+	"flower_white": {"tip": Color("fdf6ff"), "base": Color("46b884")},
+	"flower_blue": {"tip": Color("9aa8ff"), "base": Color("46b884")},
 }
 
 func setup(w: VoxelWorld) -> void:

@@ -2,7 +2,7 @@ shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_opaque;
 // 云海：缓慢流动的柔和云层，远处淡入天空色
 uniform vec3 cloud_color : source_color = vec3(1.0, 1.0, 1.0);
-uniform vec3 shadow_color : source_color = vec3(0.80, 0.87, 0.99);
+uniform vec3 shadow_color : source_color = vec3(0.86, 0.88, 1.0);
 uniform vec3 horizon_color : source_color = vec3(0.72, 0.87, 1.0);
 uniform float scale = 0.045;
 varying vec3 wpos;

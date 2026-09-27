@@ -50,7 +50,7 @@ func _draw() -> void:
 		for i in o.f:
 			poly.append(Vector2(pts[i].x, pts[i].y))
 		var lit := clampf(-n.dot(light) * 0.5 + 0.5, 0.0, 1.0)
-		var col := Color("16233d").lerp(Color("3a8fd0"), lit)
+		var col := Color("3b3f9a").lerp(Color("8fa8ff"), lit)
 		draw_colored_polygon(poly, col)
 		# 面上的“7”网格纹：细分线，暗示体素
 		for s in [1.0 / 3.0, 2.0 / 3.0]:

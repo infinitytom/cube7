@@ -8,21 +8,11 @@ var _t := 0.0
 
 func _ready() -> void:
 	var mi := MeshInstance3D.new()
-	var m := CylinderMesh.new()
-	m.top_radius = 0.18
-	m.bottom_radius = 0.18
-	m.height = 0.05
-	m.radial_segments = 16
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("ffd23f")
-	mat.metallic = 0.6
-	mat.roughness = 0.25
-	mat.emission_enabled = true
-	mat.emission = Color("ffb400")
-	mat.emission_energy_multiplier = 0.6
-	m.material = mat
-	mi.mesh = m
-	mi.rotation_degrees.x = 90.0
+	var cm := Kit.mesh(Kit.COIN)
+	mi.mesh = cm
+	var ab := cm.get_aabb()
+	mi.scale = Vector3.ONE * (0.4 / maxf(ab.size.x, ab.size.y))
+	mi.position = -ab.get_center() * mi.scale.x
 	add_child(mi)
 	_t = randf() * TAU
 

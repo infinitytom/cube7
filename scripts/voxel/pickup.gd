@@ -25,14 +25,12 @@ func _ready() -> void:
 	mat.emission = c
 	mat.emission_energy_multiplier = 2.0
 	if kind == "coin":
-		var m := CylinderMesh.new()
-		m.top_radius = 0.12
-		m.bottom_radius = 0.12
-		m.height = 0.04
-		m.radial_segments = 12
-		m.material = mat
-		mi.mesh = m
-		mi.rotation_degrees.x = 90.0
+		# Kenney 金币模型（缩到直径约 0.26 米）
+		var cm := Kit.mesh(Kit.COIN)
+		mi.mesh = cm
+		var ab := cm.get_aabb()
+		mi.scale = Vector3.ONE * (0.26 / maxf(ab.size.x, ab.size.y))
+		mi.position = -ab.get_center() * mi.scale.x
 	else:
 		var m := SphereMesh.new()
 		m.radius = 0.1

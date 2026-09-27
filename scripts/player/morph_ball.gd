@@ -91,6 +91,7 @@ func _ready() -> void:
 	_visual_root.name = "Visual"
 	add_child(_visual_root)
 	_build_visuals()
+	_build_face()
 	_roll_sound = AudioStreamPlayer3D.new()
 	var rs := load("res://audio/sfx/roll.ogg") as AudioStreamOggVorbis
 	if rs:
@@ -208,6 +209,8 @@ func apply_form(i: int, fx: bool) -> void:
 		Sfx.play("morph", Vector3.INF, -4.0)
 		Sfx.play("pix_morph", Vector3.INF, -9.0, 0.12)
 	GameState.form_changed.emit(i)
+	if _face:
+		_set_eye_color(f.color)
 
 # ---------------------------------------------------------------- 物理
 
@@ -665,3 +668,115 @@ func _burst(color: Color) -> void:
 	ps.global_position = global_position
 	ps.emitting = true
 	get_tree().create_timer(0.6).timeout.connect(ps.queue_free)
+
+
+# ---------------------------------------------------------------- 表情（屏幕脸）
+## PIX 不会说话，但有一张小屏幕脸：两只发光的眼睛永远朝着前进方向，会眨眼、会笑、会难过。
+## 屏幕脸不跟着球体一起滚，而是“浮”在球面上（像 BB-8 的脑袋），这样滚得再快也看得清表情。
+
+var _face: Node3D
+var _eyes: Array[MeshInstance3D] = []
+var _eye_mat: StandardMaterial3D
+var _blink_t := 2.0
+var _mood := ""
+var _mood_t := 0.0
+var _face_dir := Vector3(1, 0, 0)
+var _idle_t := 0.0
+
+func _build_face() -> void:
+	_face = Node3D.new()
+	_face.top_level = true
+	add_child(_face)
+	# 深色的屏幕面罩
+	var visor := MeshInstance3D.new()
+	var vm := SphereMesh.new()
+	vm.radius = 0.2
+	vm.height = 0.24
+	vm.radial_segments = 20
+	vm.rings = 8
+	visor.mesh = vm
+	var vmat := StandardMaterial3D.new()
+	vmat.albedo_color = Color("1b1f3b")
+	vmat.roughness = 0.15
+	vmat.metallic = 0.3
+	visor.material_override = vmat
+	visor.scale = Vector3(1.35, 0.95, 0.35)
+	visor.position = Vector3(0, 0.1, -0.43)
+	visor.rotation_degrees.x = -12.0
+	_face.add_child(visor)
+	_eye_mat = StandardMaterial3D.new()
+	_eye_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_eye_mat.albedo_color = Color("7ff5ff")
+	for x in [-0.085, 0.085]:
+		var e := MeshInstance3D.new()
+		var cm := CapsuleMesh.new()
+		cm.radius = 0.034
+		cm.height = 0.13
+		cm.radial_segments = 10
+		cm.rings = 3
+		e.mesh = cm
+		e.material_override = _eye_mat
+		e.position = Vector3(x, 0.115, -0.505)
+		e.rotation_degrees.x = -12.0
+		_face.add_child(e)
+		_eyes.append(e)
+	GameState.coins_changed.connect(func(_v: int) -> void: set_mood("happy", 0.5))
+	GameState.shield_changed.connect(func(_v: int) -> void:
+		if _invuln > 0.0:
+			set_mood("hurt", 1.2))
+
+func _set_eye_color(c: Color) -> void:
+	_eye_mat.albedo_color = c.lightened(0.45)
+
+## 心情："happy" 眯眼笑 / "hurt" 眼睛变成 > < / "" 正常
+func set_mood(m: String, secs: float) -> void:
+	_mood = m
+	_mood_t = secs
+
+func _process(delta: float) -> void:
+	if _face == null:
+		return
+	# 面朝前进方向（慢慢转过去），停下时也保持最后的朝向
+	var hv := Vector3(linear_velocity.x, 0, linear_velocity.z)
+	if hv.length() > 0.6:
+		_idle_t = 0.0
+		_face_dir = _face_dir.slerp(hv.normalized(), 1.0 - exp(-8.0 * delta)).normalized()
+	else:
+		# 停下来一会儿，就转过头看看镜头（看着玩家）
+		_idle_t += delta
+		var cam := get_viewport().get_camera_3d()
+		if _idle_t > 1.2 and cam:
+			var to_cam := cam.global_position - global_position
+			to_cam.y = 0.0
+			if to_cam.length() > 0.1:
+				_face_dir = _face_dir.slerp(to_cam.normalized(), 1.0 - exp(-3.0 * delta)).normalized()
+	var origin := get_global_transform_interpolated().origin
+	var r: float = FORMS[form].radius / 0.48
+	var fb := Basis.looking_at(_face_dir, Vector3.UP)
+	if form == DRILL:
+		fb = fb * Basis(Vector3.RIGHT, 0.65)   # 钻头朝前，脸往上挪一点
+	_face.global_transform = Transform3D(fb.scaled(Vector3.ONE * r), origin)
+	_face.visible = _visual_root.visible
+	# 眨眼
+	_blink_t -= delta
+	var open := 1.0
+	if _blink_t < 0.12:
+		open = 0.12
+	if _blink_t <= 0.0:
+		_blink_t = randf_range(2.0, 4.5)
+	_mood_t -= delta
+	if _mood_t <= 0.0:
+		_mood = ""
+	for i in _eyes.size():
+		var e := _eyes[i]
+		match _mood:
+			"happy":
+				# 眯成两道弯弯的缝
+				e.scale = Vector3(1.3, 0.28, 1.0)
+				e.rotation_degrees.z = 18.0 if i == 0 else -18.0
+			"hurt":
+				e.scale = Vector3(1.0, 0.7, 1.0)
+				e.rotation_degrees.z = -35.0 if i == 0 else 35.0
+			_:
+				e.scale = Vector3(1.0, open, 1.0)
+				e.rotation_degrees.z = 0.0

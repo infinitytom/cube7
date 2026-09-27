@@ -10,18 +10,12 @@ var _t := 0.0
 func _build() -> void:
 	_model = Node3D.new()
 	add_child(_model)
-	var mi := MeshInstance3D.new()
-	var b := BoxMesh.new()
-	b.size = Vector3(0.36, 0.36, 0.08)
-	mi.mesh = b
-	mi.material_override = _glow_mat(Color("b28dff"), 2.2)
-	_model.add_child(mi)
-	var inner := MeshInstance3D.new()
-	var b2 := BoxMesh.new()
-	b2.size = Vector3(0.2, 0.12, 0.1)
-	inner.mesh = b2
-	inner.material_override = _glow_mat(Color.WHITE, 3.0)
-	_model.add_child(inner)
+	var crystal := Kit.model(Kit.CRYSTAL)
+	var bb := Kit.bounds(crystal)
+	var s := 0.55 / maxf(bb.size.y, 0.01)
+	crystal.scale = Vector3.ONE * s
+	crystal.position = -bb.get_center() * s
+	_model.add_child(crystal)
 	var light := OmniLight3D.new()
 	light.light_color = Color("b28dff")
 	light.light_energy = 1.2

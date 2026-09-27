@@ -16,7 +16,7 @@ var _frag: Label
 var _obj_card: PanelContainer
 var _obj_text: Label
 var _nova: PanelContainer
-var _nova_text: Label
+var _nova_text: RichTextLabel
 var _nova_name: Label
 var _portrait: Control
 var _forms_row: HBoxContainer
@@ -216,8 +216,17 @@ func _build_nova() -> void:
 	h.add_child(v)
 	_nova_name = UIKit.label("NOVA · 站点 AI", 17, UIKit.ACCENT, true)
 	v.add_child(_nova_name)
-	_nova_text = UIKit.label("", 23, UIKit.TEXT)
+	# 富文本：台词里的按键直接显示成手柄 / 键盘图标
+	_nova_text = RichTextLabel.new()
+	_nova_text.bbcode_enabled = true
+	_nova_text.fit_content = true
+	_nova_text.scroll_active = false
 	_nova_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_nova_text.add_theme_font_override("normal_font", UIKit.font())
+	_nova_text.add_theme_font_size_override("normal_font_size", 24)
+	_nova_text.add_theme_color_override("default_color", UIKit.TEXT)
+	_nova_text.custom_minimum_size = Vector2(620, 0)
+	_nova_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.add_child(_nova_text)
 
 func _build_forms() -> void:
@@ -325,11 +334,11 @@ func _refresh_prompts() -> void:
 		c.queue_free()
 	var p := GameState.player as MorphBall
 	if p:
-		_prompts.add_child(UIKit.prompt("ability", MorphBall.FORMS[p.form].ability))
-	_prompts.add_child(UIKit.prompt("boost", "加速"))
+		_prompts.add_child(UIKit.prompt("ability", MorphBall.FORMS[p.form].ability, 24))
+	_prompts.add_child(UIKit.prompt("boost", "加速", 24))
 	if GameState.allow_jump and p:
-		_prompts.add_child(UIKit.prompt("jump", MorphBall.FORMS[p.form].jump_name))
-	_prompts.add_child(UIKit.prompt("pause", "菜单"))
+		_prompts.add_child(UIKit.prompt("jump", MorphBall.FORMS[p.form].jump_name, 24))
+	_prompts.add_child(UIKit.prompt("pause", "菜单", 24))
 	if _form_badges.size() > 0:
 		pass
 
@@ -387,13 +396,19 @@ func _fmt(t: String) -> String:
 		t = t.replace("{%s}" % key, "【%s】" % GameState.glyph(key))
 	return t
 
+func _fmt_rich(t: String) -> String:
+	for key in GameState.GLYPHS["kbm"].keys():
+		t = t.replace("{%s}" % key, " " + UIKit.glyph_bbcode(key, 30) + " ")
+	return t
+
 # ================================================================ NOVA 对话
 
 func _process(delta: float) -> void:
 	if _nova_time <= 0.0 and not _queue.is_empty():
-		var t := _fmt(_queue[0])
+		var t := _fmt_rich(_queue[0])
 		_queue.remove_at(0)
 		_nova_text.text = t
+		t = _nova_text.get_parsed_text()
 		_nova_text.visible_characters = 0
 		_chars = 0.0
 		_last_char = 0
@@ -407,12 +422,13 @@ func _process(delta: float) -> void:
 		var n := int(_chars)
 		_nova_text.visible_characters = n
 		# 语音拟声：每两个字发一个音节
-		if n != _last_char and n <= _nova_text.text.length() and n % 2 == 0:
-			var ch := _nova_text.text.substr(n - 1, 1) if n > 0 else ""
+		var plain := _nova_text.get_parsed_text()
+		if n != _last_char and n <= plain.length() and n % 2 == 0:
+			var ch := plain.substr(n - 1, 1) if n > 0 else ""
 			if ch.strip_edges() != "" and not ch in "，。！？、…—「」【】":
 				Sfx.play("voice_nova", Vector3.INF, -12.0, 0.18)
 		_last_char = n
-		(_portrait as NovaPortrait).talking = n < _nova_text.text.length()
+		(_portrait as NovaPortrait).talking = n < plain.length()
 		if _nova_time <= 0.0:
 			var tw := create_tween()
 			tw.tween_property(_nova, "modulate:a", 0.0, 0.25)
