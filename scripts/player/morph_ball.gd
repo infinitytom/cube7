@@ -301,9 +301,9 @@ func _drill(dir: Vector3) -> void:
 			for oz in [-0.25, 0.25]:
 				pts.append(global_position + Vector3(ox, -0.7, oz))
 	else:
-		# 钻出约 1.5m × 1.5m 的隧道，足够球体通过
+		# 钻出约 1.5m 宽、2m 高的隧道：球能通过，镜头也有空间
 		var side := Vector3.UP.cross(_move_dir).normalized()
-		for oy in [-0.25, 0.2, 0.6]:
+		for oy in [-0.25, 0.2, 0.6, 1.05]:
 			for os in [-0.45, 0.0, 0.45]:
 				pts.append(global_position + _move_dir * 0.75 + Vector3.UP * oy + side * os)
 	var broke := false
@@ -405,6 +405,9 @@ func _release_held(vel: Vector3) -> void:
 		_held.call("set_held", false)
 		(_held as RigidBody3D).linear_velocity = vel
 	_held = null
+
+func set_visual_hidden(v: bool) -> void:
+	_visual_root.visible = not v
 
 func is_holding() -> bool:
 	return _held != null

@@ -35,5 +35,7 @@ func _run() -> void:
 	await shot("03_glass", Vector3i(24, 4, 30), -PI / 2.0 + 0.2, -0.2)
 	await shot("04_rock", Vector3i(46, 4, 30), -PI / 2.0 - 0.3, -0.25)
 	await shot("05_lab", Vector3i(62, 4, 26), -PI / 2.0 - 0.9, -0.35, true)
+	# 贴着墙：镜头应自动抬高
+	await shot("07_wall", Vector3i(34, 4, 32), -PI / 2.0, -0.35, false, 3.0)
 	await shot("06_track", Vector3i(94, 4, 31), -PI / 2.0 - 0.5, -0.45, true)
 	get_tree().quit()
