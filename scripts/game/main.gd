@@ -58,6 +58,7 @@ func _new_game() -> void:
 	if level.has_method("intro_shots") and not bool(SaveGame.data.get("intro_seen", false)):
 		hud.visible = false
 		player.freeze = true
+		player.teleport(level.call("spawn_position"))
 		var marker := level.get_node_or_null("ObjectiveMarker") as Node3D
 		if marker:
 			marker.visible = false

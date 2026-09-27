@@ -254,7 +254,8 @@ func _physics_process(delta: float) -> void:
 	_ability_cd -= delta
 	if not _impacts.is_empty():
 		_handle_impacts()
-	if global_position.y < GameState.kill_y:
+	# 冻结时（过场动画）物理不跑，传送也不会生效——这时不能判定掉落，否则会每帧“复活”一次
+	if global_position.y < GameState.kill_y and not freeze:
 		GameState.respawn()
 		return
 
@@ -576,6 +577,8 @@ func respawn_at(pos: Vector3, form_idx: int, locks: bool) -> void:
 func teleport(pos: Vector3) -> void:
 	_teleport_pos = pos
 	_teleport = true
+	if freeze:
+		global_position = pos
 
 # ---------------------------------------------------------------- 抓取 / 投掷
 
