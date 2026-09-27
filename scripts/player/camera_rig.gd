@@ -3,13 +3,13 @@ extends Node3D
 ## 第三人称环绕镜头：右摇杆 / 鼠标旋转，△ / V 切换 45° 俯视“模型模式”
 
 @export var target_path: NodePath
-@export var distance := 6.5
+@export var distance := 7.0
 @export var model_distance := 15.0
 @export var stick_speed := Vector2(2.8, 1.8)
 @export var mouse_sensitivity := 0.0025
 
 var yaw := -PI / 2.0      ## 初始朝向 +X（关卡推进方向）
-var pitch := -0.38
+var pitch := -0.5
 var model_view := false
 
 var _target: Node3D

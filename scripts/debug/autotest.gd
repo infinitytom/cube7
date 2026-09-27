@@ -60,9 +60,9 @@ func _run() -> void:
 
 	# 2. 撞碎木箱 + 金币自动吸收
 	var coins0 := GameState.coins
-	await tp(Vector3i(6, 4, 22), Vector3(5.5, 0, 0))
+	await tp(Vector3i(8, 4, 22), Vector3(5.5, 0, 0))
 	await wait(1.6)
-	check(count_type(Vector3i(10, 4, 22), Vector3i(11, 5, 23), Blocks.CRATE) < 8, "5.5 m/s 撞碎木箱（剩 %d/8）" % count_type(Vector3i(10, 4, 22), Vector3i(11, 5, 23), Blocks.CRATE))
+	check(count_type(Vector3i(12, 4, 22), Vector3i(13, 5, 23), Blocks.CRATE) < 8, "5.5 m/s 撞碎木箱（剩 %d/8）" % count_type(Vector3i(12, 4, 22), Vector3i(13, 5, 23), Blocks.CRATE))
 	check(GameState.coins > coins0, "金币自动飞入：%d → %d" % [coins0, GameState.coins])
 	check(get_tree().get_nodes_in_group("usable_item").is_empty(), "普通木箱没有留下物件")
 

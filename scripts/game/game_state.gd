@@ -25,7 +25,7 @@ var blocks_broken := 0:
 			say("你是拆迁队吗？……好吧，拆得还挺专业。")
 var player: Node3D
 var camera: Node3D
-var checkpoint := Vector3(2.75, 3.5, 16.0)
+var checkpoint := Vector3(4.75, 3.5, 16.0)
 var checkpoint_form := -1          ## 复活时强制的形态（-1 = 不改）
 var checkpoint_locks_form := false
 var device := "kbm"                ## "ps" / "xbox" / "kbm"

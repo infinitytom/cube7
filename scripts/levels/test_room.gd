@@ -8,7 +8,7 @@ extends Node3D
 ##   D 压力板房（立方形态压开闸门）
 ##   E 悬空平衡轨道 → 终点
 
-const SPAWN := Vector3i(5, 4, 32)
+const SPAWN := Vector3i(9, 4, 32)
 const WALL_TOP := 13
 
 @export var world_path: NodePath
@@ -44,7 +44,7 @@ func _build_terrain() -> void:
 
 	# ---- A 草地广场 x1..29
 	_box(Vector3i(1, 3, 16), Vector3i(29, 3, 47), Blocks.GRASS)
-	for c in [Vector3i(10, 4, 22), Vector3i(14, 4, 40), Vector3i(20, 4, 26), Vector3i(24, 4, 34), Vector3i(8, 4, 38)]:
+	for c in [Vector3i(12, 4, 22), Vector3i(14, 4, 40), Vector3i(20, 4, 26), Vector3i(24, 4, 34), Vector3i(8, 4, 38)]:
 		_box(c, c + Vector3i(1, 1, 1), Blocks.CRATE)
 	# 砂堆（撞掉底部，上面会塌下来），里面埋着金矿
 	for i in 4:
@@ -126,7 +126,7 @@ func _talk(a: Vector3i, b: Vector3i, lines: Array) -> void:
 
 func _build_logic() -> void:
 	# A
-	_zone(Checkpoint, Vector3i(3, 4, 29), Vector3i(7, 7, 35))
+	_zone(Checkpoint, Vector3i(7, 4, 29), Vector3i(11, 7, 35))
 	_talk(Vector3i(1, 4, 16), Vector3i(9, 12, 47), [
 		"PIX，醒醒！我是站点 AI NOVA。坏消息：整颗星球……好像被变成了方块。",
 		"用{move}滚动，{camera}转镜头，{jump}跳跃。先撞开那些木箱试试——碎屑会消失，金币会自己飞进你肚子里。",
