@@ -57,7 +57,7 @@ def sample(inst, m, dur, vel=0.8, release=0.25):
     return y * env * vel
 
 # 持续音乐器：采样只有 3 秒左右，需要时用稳定段交叉淡化循环来延长
-SUSTAINED = {"string_ensemble_1", "pad_2_warm", "cello", "flute"}
+SUSTAINED = {"string_ensemble_1", "pad_2_warm", "cello", "flute", "choir_aahs", "tremolo_strings", "french_horn", "contrabass"}
 
 def _sustain(src, need):
     a, b = int(0.9 * SR), int(min(2.3 * SR, len(src) * 0.75))
@@ -349,9 +349,129 @@ def render_greenhouse():
     for k, v in master(stems).items():
         write_ogg(k, v)
 
+# ------------------------------------------------------------------ 开场 CG 配乐（一次性，不循环）
+# 时间轴和开场镜头对齐：
+#   0–7   太空里的伊甸-7：安静、辽阔
+#   7–13  日冕潮扑来：震音弦乐渐强 + 定音鼓滚奏
+#   13–21 方舟引擎启动：合唱涌起，钢片琴和竖琴像方块一样闪烁上行
+#   21–28 云海上的浮岛：温暖、有希望的主题
+#   28–35 “三年过去了，一座塔也没有亮”：空旷、孤独
+#   35–38.4 坠落：屏息 → 36.6 秒撞击（定音鼓重击 + 低音）
+#   38.4– NOVA 醒来：柔和的解决，像开机提示音
+INTRO_LEN = 50.0
+
+def render_intro():
+    beat = 60 / 72
+    n = int((INTRO_LEN + 4) * SR)
+    buf = np.zeros((n, 2))
+    def chord(t, dur, notes, inst, vel, pan_spread=0.4, rel=1.5):
+        for m in notes:
+            place(buf, sample(inst, m, dur, vel, rel), t, rng.uniform(-pan_spread, pan_spread))
+    # A：太空
+    chord(0.0, 7.4, [62, 66, 69, 73, 76], "string_ensemble_1", 0.2)
+    chord(0.0, 7.4, [50, 57, 62, 66], "pad_2_warm", 0.14)
+    place(buf, sample("contrabass", 38, 7.0, 0.35, 1.5), 0.0)
+    for k, (t, m) in enumerate([(1.0, 81), (2.6, 78), (3.4, 76), (4.4, 74), (5.6, 78)]):
+        place(buf, sample("celesta", m, 1.4, 0.4, 1.0), t, -0.2 + k * 0.1)
+    for k in range(10):
+        place(buf, sample("orchestral_harp", [62, 66, 69, 73, 74][k % 5] + (12 if k >= 5 else 0), 1.2, 0.18, 1.0), 0.4 + k * 0.62, 0.3)
+    # B：日冕潮
+    for (t, notes) in [(7.0, [59, 62, 66]), (9.0, [55, 59, 62, 66]), (11.0, [57, 61, 64, 67])]:
+        for m in notes:
+            place(buf, sample("tremolo_strings", m, 2.1, 0.16 + (t - 7.0) * 0.03, 0.6), t, rng.uniform(-0.5, 0.5))
+    place(buf, sample("cello", 47, 6.0, 0.4, 0.8), 7.0, -0.2)
+    t = 8.5
+    gap = 0.5
+    while t < 12.9:
+        place(buf, sample("timpani", 45, 0.4, 0.12 + (t - 8.5) * 0.08, 0.3), t, 0.0)
+        t += gap
+        gap = max(gap * 0.88, 0.09)
+    # C：方舟引擎
+    chord(13.0, 8.4, [62, 66, 69, 74], "choir_aahs", 0.3, 0.6, 2.0)
+    chord(13.0, 8.4, [50, 57, 62], "french_horn", 0.22, 0.3, 1.5)
+    chord(13.0, 8.4, [62, 66, 69, 73, 78], "string_ensemble_1", 0.2)
+    place(buf, sample("timpani", 38, 1.5, 0.55, 1.0), 13.0)
+    arp = [74, 78, 81, 85, 86, 90, 93, 97]
+    for k in range(40):
+        tt = 13.2 + k * 0.19
+        place(buf, sample("celesta", arp[k % len(arp)] - (12 if k % 16 >= 8 else 0), 0.5, 0.26, 0.6), tt, (k % 5) / 2.5 - 0.8)
+    for g in [14.0, 17.0, 19.8]:
+        for k, m in enumerate([62, 66, 69, 74, 78, 81, 86, 90]):
+            place(buf, sample("orchestral_harp", m, 1.2, 0.2, 0.8), g + k * 0.045, 0.5)
+    # D：浮岛，希望
+    for (t, root, kind) in [(21.0, 43, "maj7"), (22.75, 42, "m7"), (24.5, 40, "m7"), (26.25, 45, "sus")]:
+        chord(t, 1.9, voice(chord_notes(root, kind), 57, 74), "string_ensemble_1", 0.22, 0.4, 1.0)
+        place(buf, sample("cello", root if root >= 40 else root + 12, 1.8, 0.35, 0.8), t, -0.1)
+    for (t, d, m) in [(21.2, 1.2, 81), (22.4, 0.6, 78), (23.0, 0.6, 76), (23.6, 1.4, 74), (25.0, 0.6, 78), (25.6, 1.2, 79), (26.8, 0.6, 83), (27.4, 1.4, 81)]:
+        place(buf, sample("celesta", m, d, 0.45, 0.8), t, -0.1)
+        place(buf, sample("flute", m - 12, d, 0.28, 0.4), t + 0.01, 0.15)
+    # E：空旷
+    chord(28.0, 7.2, [59, 62, 66, 69], "pad_2_warm", 0.16)
+    place(buf, sample("contrabass", 35, 7.0, 0.3, 1.2), 28.0)
+    for (t, m) in [(29.0, 78), (30.6, 76), (32.2, 74), (33.8, 71)]:
+        place(buf, sample("celesta", m, 1.6, 0.32, 1.2), t, 0.2)
+    # F：坠落与撞击
+    chord(35.0, 1.5, [59, 66], "tremolo_strings", 0.1, 0.3, 0.3)
+    place(buf, sample("timpani", 38, 2.0, 0.8, 1.5), 36.6)
+    place(buf, sample("contrabass", 26, 1.6, 0.7, 1.0), 36.6)
+    place(buf, sample("cello", 38, 1.6, 0.5, 1.0), 36.6)
+    # G：NOVA 醒来
+    chord(38.6, 10.0, [62, 66, 69, 76], "string_ensemble_1", 0.16, 0.4, 3.0)
+    chord(38.6, 10.0, [50, 57, 64], "pad_2_warm", 0.13, 0.2, 3.0)
+    for (t, m) in [(39.2, 74), (39.5, 78), (39.8, 81), (40.4, 86)]:
+        place(buf, sample("celesta", m, 0.8, 0.38, 1.2), t, 0.1)
+    for k in range(12):
+        place(buf, sample("orchestral_harp", [62, 66, 69, 74, 76, 81][k % 6], 1.5, 0.16, 1.0), 41.5 + k * 0.62, -0.3)
+    mix = hp(buf, 30)
+    mix = reverb(mix, 0.4)
+    # 结尾 3 秒淡出
+    fade = int(3.0 * SR)
+    end = int(INTRO_LEN * SR)
+    mix[end - fade:end] *= np.linspace(1, 0, fade)[:, None]
+    mix[end:] = 0
+    st = master({"intro": mix[:end + int(0.5 * SR)]}, 0.1)
+    write_ogg("intro_cg", st["intro"])
+
+## 陨石落下的呼啸 + 撞击：低频为主、干净厚实，而不是白噪音
+def render_impact_sfx():
+    n = int(1.8 * SR)
+    t = np.arange(n) / SR
+    # 呼啸：带通噪声，中心频率从 1800Hz 滑到 300Hz，音量渐强
+    x = rng.standard_normal(n)
+    out = np.zeros(n)
+    seg = int(0.03 * SR)
+    for i in range(0, n, seg):
+        fc = 1800 * (300 / 1800) ** (i / n)
+        sos = butter(2, [fc * 0.7 / (SR / 2), fc * 1.3 / (SR / 2)], btype="band", output="sos")
+        out[i:i + seg] = sosfilt(sos, x[max(i - 400, 0):i + seg])[-min(seg, n - i):]
+    whoosh = out * np.linspace(0.05, 0.6, n) ** 1.5
+    whoosh = lp(whoosh, 3000)
+    write_ogg("meteor", np.stack([whoosh, whoosh], 1) * 0.8)
+    # 撞击：45Hz 的次低频“咚” + 低通隆隆声 + 少量碎石
+    n = int(2.2 * SR)
+    t = np.arange(n) / SR
+    boom = np.sin(2 * np.pi * np.cumsum(40 + 60 * np.exp(-t * 12)) / SR) * np.exp(-t * 3.5)
+    rumble = lp(rng.standard_normal(n), 350) * np.exp(-t * 2.5) * 0.9
+    crack = hp(rng.standard_normal(n), 1500) * np.exp(-t * 30) * 0.25
+    debris = np.zeros(n)
+    for k in range(14):
+        i = int(rng.uniform(0.05, 1.0) * SR)
+        m = int(0.03 * SR)
+        debris[i:i + m] += bp_(rng.standard_normal(m), 900, 3000) * np.exp(-np.arange(m) / SR * 80) * rng.uniform(0.05, 0.15)
+    y = boom * 0.9 + rumble + crack + debris
+    y = y / np.max(np.abs(y)) * 0.9
+    write_ogg("impact_big", np.stack([y, y], 1))
+
+def bp_(x, lo, hi):
+    sos = butter(2, [lo / (SR / 2), hi / (SR / 2)], btype="band", output="sos")
+    return sosfilt(sos, x)
+
 if __name__ == "__main__":
     what = sys.argv[2] if len(sys.argv) > 2 else "all"
     if what in ("all", "title"):
         render_title()
     if what in ("all", "gh"):
         render_greenhouse()
+    if what in ("all", "intro"):
+        render_intro()
+        render_impact_sfx()

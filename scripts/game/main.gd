@@ -61,15 +61,19 @@ func _new_game() -> void:
 		var marker := level.get_node_or_null("ObjectiveMarker") as Node3D
 		if marker:
 			marker.visible = false
-		Music.set_override("quiet")
+		Music.play_cue("intro_cg")
 		var cs := Cutscene.new()
 		cs.shots = level.call("intro_shots")
 		cs.event.connect(func(n: String) -> void:
-			if n == "crash" and level.has_method("crash_fx"):
-				level.call("crash_fx"))
+			if level.has_method("cutscene_event"):
+				level.call("cutscene_event", n))
 		add_child(cs)
 		cs.play()
 		await cs.finished
+		Music.stop_cue(1.5)
+		Music.play_area("gh")
+		if level.has_method("cutscene_event"):
+			level.call("cutscene_event", "end")
 		SaveGame.data["intro_seen"] = true
 		SaveGame.write()
 		player.freeze = false

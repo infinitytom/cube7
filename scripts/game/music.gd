@@ -58,6 +58,31 @@ func stop() -> void:
 	for layer in LAYERS:
 		(_players[layer] as AudioStreamPlayer).stop()
 
+## 过场用的一次性配乐（不分层、不循环）：会先停掉区域音乐
+var _cue: AudioStreamPlayer
+
+func play_cue(name: String) -> void:
+	stop()
+	if _cue == null:
+		_cue = AudioStreamPlayer.new()
+		_cue.bus = "Music"
+		add_child(_cue)
+	var path := "res://audio/music/%s.ogg" % name
+	if not ResourceLoader.exists(path):
+		return
+	var s := load(path) as AudioStreamOggVorbis
+	s.loop = false
+	_cue.stream = s
+	_cue.volume_db = 0.0
+	_cue.play()
+
+func stop_cue(fade := 1.0) -> void:
+	if _cue == null or not _cue.playing:
+		return
+	var tw := create_tween()
+	tw.tween_property(_cue, "volume_db", -60.0, fade)
+	tw.tween_callback(_cue.stop)
+
 func set_default(state: String) -> void:
 	default_state = state
 

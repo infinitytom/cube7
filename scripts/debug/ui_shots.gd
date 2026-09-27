@@ -35,6 +35,17 @@ func _key(k: Key) -> void:
 func _run() -> void:
 	for i in SaveGame.SLOTS:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_%d.json" % i))
+	if OS.get_cmdline_user_args().has("--cgonly"):
+		await _wait(2.0)
+		get_tree().current_scene.call("_start_new", 0)
+		await _wait(2.0)
+		var i := 0
+		for t in [3.0, 7.0, 4.0, 2.5, 3.0, 4.0, 8.0, 7.0]:
+			await _wait(t)
+			i += 1
+			await _save("cg_%02d" % i)
+		get_tree().quit()
+		return
 	await _wait(4.5)
 	await _save("u01_title")
 	await _key(KEY_SPACE)
@@ -60,7 +71,7 @@ func _run() -> void:
 		get_tree().quit()
 		return
 	await _wait(2.0)
-	for t in [1.5, 5.0, 7.0, 5.0, 6.0, 6.0]:
+	for t in [3.0, 7.0, 4.0, 2.5, 3.0, 4.0, 8.0]:
 		await _wait(t)
 		await _save("u05_cut_%.0f" % Time.get_ticks_msec())
 	# 等开场结束

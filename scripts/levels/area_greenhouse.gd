@@ -666,17 +666,38 @@ func apply_save(d: Dictionary) -> void:
 static func _vec(a) -> Vector3:
 	return Vector3(a[0], a[1], a[2]) if a is Array and a.size() == 3 else Vector3.INF
 
-## 开场演出：云海全景 → 熄灭的温室与中枢塔 → 飞船坠落 → NOVA 苏醒
+## 开场演出：太空里的伊甸-7 → 日冕潮 → 方舟引擎把星球拆成方块 → 云海上的浮岛 → 熄灭的重构塔 → 坠落 → NOVA 苏醒
+const STAGE_POS := Vector3(40.0, 160.0, -320.0)
+var _stage: IntroStage
+
+func cutscene_event(n: String) -> void:
+	match n:
+		"space":
+			_stage = IntroStage.new()
+			add_child(_stage)
+			_stage.global_position = STAGE_POS
+			_stage.play()
+		"land", "end":
+			if is_instance_valid(_stage):
+				_stage.queue_free()
+		"crash":
+			crash_fx()
+
 func intro_shots() -> Array:
 	var V := VoxelWorld.VOXEL
 	var c := Vector3(64, G, 50) * V
+	var S := STAGE_POS
 	return [
-		{"black": true, "from": Vector3(-40, 40, 140) * V, "to": Vector3(-20, 38, 130) * V, "look": c, "dur": 6.0,
-			"lines": [["", "星历 3124 年，殖民星球「伊甸-7」。"], ["", "恒星爆发了百年一遇的日冕潮。撤离，已经来不及了。"]]},
-		{"from": Vector3(-30, 60, 150) * V, "to": Vector3(20, 45, 140) * V, "look": c, "dur": 8.0,
-			"lines": [["", "最后一小时，艾拉·林博士启动了「方舟引擎」。"], ["", "陆地、森林、城市，还有一万两千个居民——整颗星球被拆成了方块，"], ["", "托上云海，躲过了那场风暴。"]]},
+		{"from": S + Vector3(5, 3, 24), "to": S + Vector3(-2, 4, 19), "look": S, "dur": 7.0, "event": "space", "fade": Color.BLACK,
+			"lines": [["", "星历 3124 年，殖民星球「伊甸-7」。"], ["", "一万两千个居民，一片安静的森林和海。"]]},
+		{"from": S + Vector3(15, 2, 16), "to": S + Vector3(11, 3, 12), "look_from": S, "look_to": S + Vector3(-4, 0.5, -3), "dur": 6.0,
+			"lines": [["", "那一年，恒星爆发了百年一遇的日冕潮。"], ["", "撤离，已经来不及了。"]]},
+		{"from": S + Vector3(0, 5, 17), "to": S + Vector3(2, 12, 33), "look": S, "dur": 8.0,
+			"lines": [["", "最后一小时，艾拉·林博士启动了「方舟引擎」。"], ["", "整颗星球——陆地、森林、城市和所有居民——被拆成了方块。"]]},
+		{"from": Vector3(-30, 60, 150) * V, "to": Vector3(20, 45, 140) * V, "look": c, "dur": 7.0, "event": "land", "fade": Color(1, 1, 1),
+			"lines": [["", "方块们被托上云海，躲过了那场风暴。"], ["", "按照计划，三年后五座重构塔会一同点亮，把星球重新拼回来。"]]},
 		{"from": Vector3(40, 34, 70) * V, "to": Vector3(52, 32, 62) * V, "look_from": Vector3(64, 28, 36) * V, "look_to": Vector3(100, 30, 24) * V, "dur": 7.0,
-			"lines": [["", "按照计划，三年后五座重构塔会一同点亮，把星球重新拼回来。"], ["", "三年过去了。一座塔也没有亮。"]]},
+			"lines": [["", "三年过去了。"], ["", "一座塔也没有亮。"]]},
 		{"from": Vector3(40, 30, 110) * V, "to": Vector3(32, 26, 100) * V, "look_from": Vector3(10, 70, 60) * V, "look_to": Vector3(15, 18, 74) * V, "dur": 3.4, "event": "crash",
 			"lines": [["", "直到今天——"]]},
 		{"from": Vector3(31, 28, 90) * V, "to": Vector3(26, 25.5, 85) * V, "look": Vector3(16, 18.5, 74) * V, "dur": 10.0,
@@ -727,12 +748,11 @@ func crash_fx() -> void:
 	light.omni_range = 12.0
 	pod.add_child(light)
 	pod.global_position = start
-	Sfx.play("dash", Vector3.INF, 4.0, 0.0)
+	Sfx.play("meteor", Vector3.INF, -2.0, 0.0)
 	var tw := create_tween()
 	tw.tween_property(pod, "global_position", target, 1.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	await tw.finished
-	Sfx.play("break_hard", Vector3.INF, 6.0, 0.0)
-	Sfx.play("thud", Vector3.INF, 6.0, 0.0)
+	Sfx.play("impact_big", Vector3.INF, 0.0, 0.0)
 	GameState.shake.emit(0.9)
 	_place_ship()
 	light.light_energy = 16.0

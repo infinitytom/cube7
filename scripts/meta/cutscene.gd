@@ -89,7 +89,12 @@ func _play_shot(shot: Dictionary) -> void:
 	var to: Vector3 = shot.get("to", from)
 	var look_from: Vector3 = shot.get("look_from", shot.get("look", Vector3.ZERO))
 	var look_to: Vector3 = shot.get("look_to", shot.get("look", look_from))
-	if shot.get("black", false):
+	if shot.has("fade"):
+		# 这一镜从纯色淡入（黑场开篇、白光转场）
+		_black.color = shot["fade"]
+		_black.modulate.a = 1.0
+		create_tween().tween_property(_black, "modulate:a", 0.0, 1.2)
+	elif shot.get("black", false):
 		_black.modulate.a = 1.0
 	elif _black.modulate.a > 0.0:
 		create_tween().tween_property(_black, "modulate:a", 0.0, 1.0)
