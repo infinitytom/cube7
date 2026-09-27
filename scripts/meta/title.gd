@@ -59,7 +59,7 @@ func _process(delta: float) -> void:
 		_logo.position.y = _logo_y + sin(_t * 1.1) * 4.0
 	if _hero:
 		# PIX 在镜头右前方悬浮、缓慢自转，偶尔“看”一眼镜头
-		_hero.position = Vector3(1.55, -0.35 + sin(_t * 1.6) * 0.07, -4.2)
+		_hero.position = Vector3(2.15, -0.55 + sin(_t * 1.6) * 0.07, -4.2)
 		_hero.rotation = Vector3(sin(_t * 0.9) * 0.12, _t * 0.6, sin(_t * 0.7) * 0.1)
 		_hero_ring.rotation.z = _t * 1.8
 
