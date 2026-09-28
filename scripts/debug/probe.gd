@@ -9,9 +9,19 @@ func _ready() -> void:
 	var tgt := Vector3i(40, G + 6, 74)
 	while W.get_block(tgt) == Blocks.AIR and tgt.y > 0:
 		tgt.y -= 1
+	var tris := 0
+	var nodes := 0
+	for ch in W.get_children():
+		if ch is MeshInstance3D and (ch as MeshInstance3D).mesh:
+			nodes += 1
+			var m: ArrayMesh = (ch as MeshInstance3D).mesh
+			for s in m.get_surface_count():
+				tris += m.surface_get_array_len(s) / 3
+	print("体素网格节点 %d 个，三角形 %d" % [nodes, tris])
 	print("目标方块 ", tgt, " 类型 ", W.get_block(tgt))
 	for i in 10:
-		W._build_chunk(tgt / VoxelWorld.CHUNK)
+		W._build_chunk(tgt * VoxelWorld.CELL / VoxelWorld.CHUNK)
+	W._commit_groups()
 	print("单区块重建平均 %.1f ms" % ((Time.get_ticks_usec() - t0) / 10000.0))
 	# 大破坏：下砸级别 + 碎块
 	var c := W.voxel_center(tgt)

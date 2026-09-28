@@ -590,7 +590,7 @@ func vbreak_any(p: Vector3i) -> void:
 ##   · 沿撞击方向拉长，撞得越狠坑越深
 ##   · 坑外一圈的方块有一定概率被震裂
 ##   · 破坏后和大地断开的小碎块会整块掉落、翻滚、落地再碎
-func break_sphere(center: Vector3, radius: float, tool: String, power: float, dir := Vector3.ZERO) -> int:
+func break_sphere(center: Vector3, radius: float, tool: String, power: float, dir := Vector3.ZERO, soft_only := false) -> int:
 	var c := to_v(center)
 	var r := int(ceil(radius * 1.35 / VOXEL))
 	var count := 0
@@ -600,7 +600,8 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 		for y in range(c.y - r, c.y + r + 1):
 			for x in range(c.x - r, c.x + r + 1):
 				var p := Vector3i(x, y, z)
-				if vget(p) == Blocks.AIR:
+				var bt := vget(p)
+				if bt == Blocks.AIR or (soft_only and Blocks.soft[bt] == 0):
 					continue
 				var off := vcenter(p) - center
 				# 沿撞击方向压扁距离 → 坑沿着冲击方向更深
@@ -613,7 +614,8 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 					count += 1
 					broken.append(p)
 	if count > 0:
-		GameState.shake.emit(minf(0.08 + count * 0.02, 0.35))
+		if tool == "impact":
+			GameState.shake.emit(minf(0.08 + count * 0.02, 0.35))
 		detach_floating(broken)
 	return count
 

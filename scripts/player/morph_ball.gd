@@ -533,38 +533,16 @@ func _ring_fx(color: Color, radius: float) -> void:
 func _drill(dir: Vector3) -> void:
 	if world == null:
 		return
-	var pts: Array[Vector3] = []
+	var n := 0
 	if dir.length() < 0.15:
-		# 静止时向下钻：以球心为中心钻 3×3 格（1.5 米见方），保证球能掉下去
-		for ox in [-0.45, 0.0, 0.45]:
-			for oz in [-0.45, 0.0, 0.45]:
-				pts.append(global_position + Vector3(ox, -0.7, oz))
+		# 静止时向下钻：只钻得动松土/砂，普通地面钻不下去（避免把自己困在坑里）
+		n = world.break_sphere(global_position + Vector3.DOWN * 0.5, 0.62, "drill", 1.0, Vector3.DOWN, true)
 	else:
-		# 钻出约 1.5m 宽、2m 高的隧道：球能通过，镜头也有空间
-		var side := Vector3.UP.cross(_move_dir).normalized()
-		for oy in [-0.25, 0.2, 0.6, 1.05]:
-			for os in [-0.45, 0.0, 0.45]:
-				pts.append(global_position + _move_dir * 0.75 + Vector3.UP * oy + side * os)
-	var down := dir.length() < 0.15
-	var broke := false
-	var cells: Array[Vector3i] = []
-	for p in pts:
-		var v := world.world_to_voxel(p)
-		# 往下只能钻松土/砂：普通地面钻不下去，避免把自己困在坑里
-		if down and Blocks.soft[world.get_block(v)] == 0:
-			continue
-		if world.try_break(v, "drill", 1.0):
-			broke = true
-			cells.append(v)
-			# 隧道壁随机多崩掉一块，钻出来的洞不会像刀切一样整齐
-			if not down and randf() < 0.18:
-				var side := Vector3i([Vector3i.UP, Vector3i.LEFT, Vector3i.RIGHT, Vector3i.FORWARD, Vector3i.BACK][randi() % 5])
-				if world.try_break(v + side, "drill", 1.0, false):
-					cells.append(v + side)
-	if not cells.is_empty():
-		world.detach_floating(cells)
-	if broke:
-		GameState.shake.emit(0.06)
+		# 往前钻出一条不规则的隧道：比主角宽一圈，洞壁参差不齐
+		var d := _move_dir.normalized()
+		n = world.break_sphere(global_position + d * 0.6 + Vector3.UP * 0.08, 0.64, "drill", 1.0, d)
+	if n > 0:
+		GameState.shake.emit(0.05)
 		Sfx.play("drill", global_position, -6.0, 0.1)
 
 func _handle_impacts() -> void:
