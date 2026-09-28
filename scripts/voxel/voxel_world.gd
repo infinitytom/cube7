@@ -573,7 +573,8 @@ var damage := {}
 
 const RESTORABLE := [Blocks.GRASS, Blocks.DIRT, Blocks.SAND, Blocks.ROCK, Blocks.MOSS, Blocks.LOOSE, Blocks.PLANK, Blocks.WOOD,
 	Blocks.LEAVES, Blocks.PINE, Blocks.BLOSSOM, Blocks.ORE, Blocks.GEODE, Blocks.RUST, Blocks.PAVING, Blocks.CLIFF, Blocks.CLIFF_B,
-	Blocks.CLIFF_C, Blocks.GLOWSHROOM, Blocks.DARKROCK, Blocks.DARKROCK_B, Blocks.TILE, Blocks.HULL, Blocks.HULL_DARK]
+	Blocks.CLIFF_C, Blocks.GLOWSHROOM, Blocks.DARKROCK, Blocks.DARKROCK_B, Blocks.TILE, Blocks.HULL, Blocks.HULL_DARK,
+	Blocks.RUSTDUNE, Blocks.RUSTROCK]
 
 func log_damage(p: Vector3i, t: int) -> void:
 	if track_damage and not damage.has(p) and t in RESTORABLE:
@@ -647,6 +648,29 @@ func _chain_from(p: Vector3i, t: int) -> void:
 				block_broken.emit(q, t)
 				_chain_from(q, t)
 		GameState.shake.emit(0.12))
+
+## Boss 啃地形：球形范围里除了 protect 列表以外的方块全部挖掉（记进破坏记录，有碎屑，不给掉落）
+func carve_sphere(center: Vector3, radius: float, protect: Array) -> int:
+	var c := to_v(center)
+	var r := int(ceil(radius / VOXEL))
+	var broken: Array[Vector3i] = []
+	for z in range(c.z - r, c.z + r + 1):
+		for y in range(c.y - r, c.y + r + 1):
+			for x in range(c.x - r, c.x + r + 1):
+				var p := Vector3i(x, y, z)
+				var t := vget(p)
+				if t == Blocks.AIR or t in protect:
+					continue
+				if vcenter(p).distance_to(center) > radius * _rng.randf_range(0.9, 1.1):
+					continue
+				log_damage(p, t)
+				vset(p, Blocks.AIR)
+				if broken.size() % 6 == 0:
+					_spawn_break_fx(p, t)
+				broken.append(p)
+	if not broken.is_empty():
+		detach_floating(broken)
+	return broken.size()
 
 ## 机关用：无视硬度移除方块（有碎屑特效，不给掉落）
 func vbreak_any(p: Vector3i) -> void:
@@ -745,12 +769,20 @@ func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
 			if not _detachable(nt):
 				anchors += 1
 				continue
+			# 连到了前面已经确认“有支撑”的那一大团：这团也有支撑，不用再搜（大破坏时省掉成千上万次查询）
+			if checked.has(n):
+				supported = true
+				break
 			seen[n] = true
 			queue.append(n)
+		if supported:
+			break
+	if supported or anchors * ANCHOR_WEIGHT >= out.size():
+		for q in seen:
+			checked[q] = true
+		return []
 	for q in out:
 		checked[q] = true
-	if supported or anchors * ANCHOR_WEIGHT >= out.size():
-		return []
 	return out
 
 func _spawn_chunk(cells: Array[Vector3i]) -> void:
@@ -860,7 +892,7 @@ func _flush_debris() -> void:
 	add_child(ps)
 	ps.emitting = true
 	get_tree().create_timer(1.1).timeout.connect(ps.queue_free)
-	if _debris_pts.size() >= 10:
+	if _debris_pts.size() >= 16:
 		_dust(_debris_pts)
 	_debris_pts = PackedVector3Array()
 	_debris_cols = PackedColorArray()
@@ -870,24 +902,24 @@ static var _dust_mesh: SphereMesh
 func _dust(pts: PackedVector3Array) -> void:
 	if _dust_mesh == null:
 		_dust_mesh = SphereMesh.new()
-		_dust_mesh.radius = 0.35
-		_dust_mesh.height = 0.7
+		_dust_mesh.radius = 0.22
+		_dust_mesh.height = 0.44
 		_dust_mesh.radial_segments = 8
 		_dust_mesh.rings = 4
 		var m := StandardMaterial3D.new()
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		m.vertex_color_use_as_albedo = true
-		m.albedo_color = Color(0.92, 0.86, 0.76, 0.35)
+		m.albedo_color = Color(0.92, 0.86, 0.76, 0.22)
 		_dust_mesh.material = m
 	var ps := CPUParticles3D.new()
 	ps.mesh = _dust_mesh
 	ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
 	ps.emission_points = pts
-	ps.amount = clampi(pts.size() / 3, 4, 14)
+	ps.amount = clampi(pts.size() / 5, 3, 8)
 	ps.one_shot = true
 	ps.explosiveness = 0.9
-	ps.lifetime = 1.3
+	ps.lifetime = 0.8
 	ps.direction = Vector3.UP
 	ps.spread = 90.0
 	ps.initial_velocity_min = 0.4
@@ -895,8 +927,8 @@ func _dust(pts: PackedVector3Array) -> void:
 	ps.gravity = Vector3(0, 0.4, 0)
 	ps.damping_min = 1.0
 	ps.damping_max = 2.0
-	ps.scale_amount_min = 1.0
-	ps.scale_amount_max = 2.2
+	ps.scale_amount_min = 0.8
+	ps.scale_amount_max = 1.5
 	var c := Curve.new()
 	c.add_point(Vector2(0, 0.4))
 	c.add_point(Vector2(0.3, 1.0))

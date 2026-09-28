@@ -10,6 +10,7 @@ enum {
 	FIRE, EMBER, COPPER, BARREL, REINFORCED, SCAFFOLD, VENT, BRAMBLE,
 	PLANK, RUST,
 	CRUMBLE, GEM_CHAIN, LENS, DARKROCK, GLOWSHROOM, DARKROCK_B,
+	RUSTDUNE, RUSTROCK,
 	COUNT,
 }
 
@@ -71,6 +72,8 @@ const DEFS := {
 	DARKROCK: {"name": "深渊岩", "color": Color("5b5470")},
 	DARKROCK_B: {"name": "深渊岩（深层）", "color": Color("4a4560")},
 	GLOWSHROOM: {"name": "荧光菇", "color": Color("7dffd8"), "render": Render.GLOW, "impact": 1.5, "drill": true, "energy": 1},
+	RUSTDUNE: {"name": "锈砂丘", "color": Color("d9a577"), "drill": true, "impact": 10.5},
+	RUSTROCK: {"name": "锈岩", "color": Color("6e4a3e")},
 	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1, "burn": 2.5},
 }
 

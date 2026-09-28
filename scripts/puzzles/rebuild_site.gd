@@ -23,6 +23,7 @@ var _pad: MeshInstance3D
 var _pad_mat: StandardMaterial3D
 var _t := 0.0
 var _warn_t := 0.0
+var _shown_matter := -1
 static var _told := false
 
 func _ready() -> void:
@@ -128,7 +129,8 @@ func _process(delta: float) -> void:
 	_warn_t -= delta
 	_ghost_mat.albedo_color.a = 0.2 + 0.08 * sin(_t * 2.2)
 	_pad_mat.albedo_color.a = 0.35 + 0.2 * sin(_t * 4.0)
-	if int(_t * 5.0) % 3 == 0:
+	if GameState.matter != _shown_matter:
+		_shown_matter = GameState.matter
 		_refresh_label()
 	var p := GameState.player as MorphBall
 	if p == null:
@@ -239,8 +241,8 @@ static func tower(base: Vector3i, h := 12) -> Array:
 		bp.append([base + Vector3i(c.x, h, c.y), Blocks.LAMP, 0])
 	return [bp, base + Vector3i(1, h, 1)]
 
-## 直桥：从 a 到 b（同一高度的两格，a/b 是桥面格），宽 w，两侧矮栏
-static func bridge(a: Vector3i, b: Vector3i, w := 3) -> Array:
+## 直桥：从 a 到 b（同一高度的两格，a/b 是桥面格），宽 w（两侧各一格是栏杆，中间 w-2 格能走）
+static func bridge(a: Vector3i, b: Vector3i, w := 5) -> Array:
 	var bp: Array = []
 	var d := b - a
 	var n := maxi(absi(d.x), absi(d.z))

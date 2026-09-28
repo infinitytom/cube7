@@ -185,8 +185,7 @@ func take_hit(from: Vector3, kind: String) -> void:
 	_hit_flash = 0.15
 	Sfx.play("clang", global_position, -4.0, 0.1)
 	GameState.shake.emit(0.16)
-	if hp > 1:
-		GameState.hitstop(0.035)
+	GameState.rumble(0.35, 0.3, 0.1)
 	if hp <= 0:
 		defeat(true)
 	else:
@@ -279,7 +278,8 @@ func defeat(drops: bool) -> void:
 	dead = true
 	Sfx.play("enemy_defeat", global_position, 0.0, 0.08)
 	GameState.shake.emit(0.3)
-	GameState.hitstop(0.07)
+	GameState.hitstop(0.05)
+	GameState.rumble(0.5, 0.7, 0.18)
 	GameState.enemies_defeated += 1
 	GameState.add_combo(5)
 	if drops:

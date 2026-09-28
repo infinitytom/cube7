@@ -7,6 +7,7 @@ var _panel: PanelContainer
 var _list: VBoxContainer
 var _controls: PanelContainer
 var _settings: SettingsPanel
+var _upgrades: UpgradePanel
 var _open := false
 
 func _ready() -> void:
@@ -23,7 +24,7 @@ func _ready() -> void:
 	_root.add_child(dim)
 	_panel = PanelContainer.new()
 	_panel.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG_SOLID, UIKit.LINE, 20, 32))
-	UIKit.place(_panel, Vector4(0, 0.5, 0, 0.5), Vector4(90, -300, 560, 300))
+	UIKit.place(_panel, Vector4(0, 0.5, 0, 0.5), Vector4(90, -330, 560, 330))
 	_root.add_child(_panel)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 12)
@@ -38,6 +39,9 @@ func _ready() -> void:
 		close()
 		GameState.respawn())
 	_btn("操作说明", func() -> void: _show_controls())
+	_btn("改装 PIX", func() -> void:
+		_panel.visible = false
+		_upgrades.open())
 	_btn("设置", func() -> void:
 		_panel.visible = false
 		_settings.open())
@@ -47,13 +51,21 @@ func _ready() -> void:
 		Music.stop()
 		Flow.goto_title())
 	_settings = SettingsPanel.new()
-	UIKit.place(_settings, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-310, -290, 310, 290))
+	UIKit.place(_settings, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-350, -340, 350, 340))
 	_settings.visible = false
 	_settings.closed.connect(func() -> void:
 		_settings.visible = false
 		_panel.visible = true
-		(_list.get_child(2) as Button).grab_focus())
+		(_list.get_child(6) as Button).grab_focus())
 	_root.add_child(_settings)
+	_upgrades = UpgradePanel.new()
+	UIKit.place(_upgrades, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-380, -330, 380, 330))
+	_upgrades.visible = false
+	_upgrades.closed.connect(func() -> void:
+		_upgrades.visible = false
+		_panel.visible = true
+		(_list.get_child(5) as Button).grab_focus())
+	_root.add_child(_upgrades)
 
 func _btn(t: String, cb: Callable) -> void:
 	var b := Button.new()
@@ -99,6 +111,7 @@ func close() -> void:
 	get_tree().paused = false
 	_root.visible = false
 	_settings.visible = false
+	_upgrades.visible = false
 	if _controls:
 		_controls.visible = false
 	if DisplayServer.get_name() != "headless":

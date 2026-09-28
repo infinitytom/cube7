@@ -284,7 +284,7 @@ func _build_ui() -> void:
 	_ui.add_child(_dim)
 	# 设置
 	_settings = SettingsPanel.new()
-	UIKit.place(_settings, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-310, -290, 310, 290))
+	UIKit.place(_settings, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-350, -340, 350, 340))
 	_settings.visible = false
 	_settings.closed.connect(func() -> void:
 		_settings.visible = false

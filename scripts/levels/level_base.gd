@@ -198,6 +198,10 @@ func rebuild_tower(id: String, x: int, z: int, cost: int, h := 12, chest := {}) 
 	if base.x < 0:
 		push_warning("重构点 %s 找不到平地" % id)
 		return null
+	return rebuild_tower_at(id, base, cost, h, chest)
+
+## 指定位置放瞭望台（base：塔芯西北角的地面格）
+func rebuild_tower_at(id: String, base: Vector3i, cost: int, h := 12, chest := {}) -> RebuildSite:
 	var res := RebuildSite.tower(base, h)
 	# 地基：塔脚下低一格的地方补平
 	var found: Array = []

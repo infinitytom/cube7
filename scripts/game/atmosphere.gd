@@ -9,7 +9,7 @@ const PRESETS := {
 		"top": Color(0.20, 0.45, 0.93), "mid": Color(0.47, 0.71, 1.0), "horizon": Color(0.88, 0.94, 1.0), "bottom": Color(0.62, 0.74, 0.97),
 		"sun_rot": Vector3(-40, -140, 0), "sun_color": Color(1.0, 0.95, 0.86), "sun_energy": 1.5, "sun_tint": Color(1.0, 0.93, 0.8),
 		"cloud_lit": Color(1.0, 1.0, 1.0), "cloud_shade": Color(0.74, 0.80, 0.96), "gap": Color(0.52, 0.62, 0.92),
-		"fog": Color(0.80, 0.88, 1.0), "fog_density": 0.0011, "fog_height": -6.0, "fog_height_density": 0.035,
+		"fog": Color(0.80, 0.88, 1.0), "fog_density": 0.00077, "fog_height": -6.0, "fog_height_density": 0.0140,
 		"planet": Vector3(-0.2, 0.42, -0.88), "planet_radius": 0.1, "planet_color": Color(0.88, 0.80, 1.0), "planet_band": Color(0.66, 0.62, 0.95),
 		"moon": Vector3(0.95, 0.22, 0.2), "stars": 0.0, "horizon_glow": 0.25, "ambient": 1.0,
 	},
@@ -18,7 +18,7 @@ const PRESETS := {
 		"top": Color(0.20, 0.25, 0.62), "mid": Color(0.62, 0.52, 0.78), "horizon": Color(1.0, 0.78, 0.58), "bottom": Color(0.78, 0.6, 0.66),
 		"sun_rot": Vector3(-17, -118, 0), "sun_color": Color(1.0, 0.78, 0.55), "sun_energy": 1.65, "sun_tint": Color(1.0, 0.62, 0.35),
 		"cloud_lit": Color(1.0, 0.88, 0.76), "cloud_shade": Color(0.86, 0.7, 0.78), "gap": Color(0.62, 0.52, 0.74),
-		"fog": Color(0.98, 0.8, 0.7), "fog_density": 0.001, "fog_height": -8.0, "fog_height_density": 0.02,
+		"fog": Color(0.98, 0.8, 0.7), "fog_density": 0.00070, "fog_height": -8.0, "fog_height_density": 0.0080,
 		"planet": Vector3(-0.35, 0.33, -0.88), "planet_radius": 0.12, "planet_color": Color(0.98, 0.78, 0.86), "planet_band": Color(0.8, 0.56, 0.78),
 		"moon": Vector3(0.2, 0.45, -0.85), "stars": 0.25, "horizon_glow": 0.55, "ambient": 0.95,
 	},
@@ -27,7 +27,7 @@ const PRESETS := {
 		"top": Color(0.16, 0.26, 0.62), "mid": Color(0.42, 0.52, 0.92), "horizon": Color(0.78, 0.84, 1.0), "bottom": Color(0.55, 0.6, 0.9),
 		"sun_rot": Vector3(-48, 150, 0), "sun_color": Color(0.92, 0.94, 1.0), "sun_energy": 1.35, "sun_tint": Color(0.85, 0.8, 1.0),
 		"cloud_lit": Color(0.96, 0.96, 1.0), "cloud_shade": Color(0.7, 0.72, 0.95), "gap": Color(0.48, 0.5, 0.88),
-		"fog": Color(0.72, 0.78, 1.0), "fog_density": 0.0012, "fog_height": 2.0, "fog_height_density": 0.03,
+		"fog": Color(0.72, 0.78, 1.0), "fog_density": 0.00084, "fog_height": 2.0, "fog_height_density": 0.0120,
 		"planet": Vector3(0.5, 0.4, -0.75), "planet_radius": 0.13, "planet_color": Color(0.8, 0.9, 1.0), "planet_band": Color(0.6, 0.7, 0.98),
 		"moon": Vector3(-0.6, 0.5, -0.6), "stars": 0.15, "horizon_glow": 0.3, "ambient": 1.05,
 	},
@@ -36,16 +36,25 @@ const PRESETS := {
 		"top": Color(0.14, 0.4, 0.95), "mid": Color(0.4, 0.66, 1.0), "horizon": Color(0.9, 0.95, 1.0), "bottom": Color(0.7, 0.8, 1.0),
 		"sun_rot": Vector3(-58, -60, 0), "sun_color": Color(1.0, 0.97, 0.9), "sun_energy": 1.6, "sun_tint": Color(1.0, 0.95, 0.85),
 		"cloud_lit": Color(1.0, 1.0, 1.0), "cloud_shade": Color(0.78, 0.84, 0.98), "gap": Color(0.55, 0.66, 0.95),
-		"fog": Color(0.84, 0.9, 1.0), "fog_density": 0.0009, "fog_height": -10.0, "fog_height_density": 0.03,
+		"fog": Color(0.84, 0.9, 1.0), "fog_density": 0.00063, "fog_height": -10.0, "fog_height_density": 0.0120,
 		"planet": Vector3(0.3, 0.5, -0.8), "planet_radius": 0.12, "planet_color": Color(0.9, 0.86, 1.0), "planet_band": Color(0.7, 0.66, 0.95),
 		"moon": Vector3(-0.7, 0.45, -0.4), "stars": 0.0, "horizon_glow": 0.2, "ambient": 1.05,
+	},
+	# 第五章：锈海——尘土飞扬的橙色午后，天边一层锈色的雾
+	"rust": {
+		"top": Color(0.30, 0.38, 0.62), "mid": Color(0.74, 0.58, 0.52), "horizon": Color(1.0, 0.76, 0.54), "bottom": Color(0.72, 0.5, 0.38),
+		"sun_rot": Vector3(-24, -135, 0), "sun_color": Color(1.0, 0.82, 0.62), "sun_energy": 1.55, "sun_tint": Color(1.0, 0.66, 0.4),
+		"cloud_lit": Color(1.0, 0.88, 0.74), "cloud_shade": Color(0.84, 0.64, 0.56), "gap": Color(0.66, 0.5, 0.52),
+		"fog": Color(0.94, 0.78, 0.64), "fog_density": 0.00091, "fog_height": 4.0, "fog_height_density": 0.0060,
+		"planet": Vector3(0.45, 0.35, -0.82), "planet_radius": 0.14, "planet_color": Color(1.0, 0.84, 0.76), "planet_band": Color(0.86, 0.6, 0.56),
+		"moon": Vector3(-0.5, 0.5, -0.7), "stars": 0.1, "horizon_glow": 0.6, "ambient": 1.0,
 	},
 	# 标题画面：暖黄昏
 	"title": {
 		"top": Color(0.22, 0.42, 0.92), "mid": Color(0.62, 0.66, 0.95), "horizon": Color(1.0, 0.86, 0.74), "bottom": Color(0.72, 0.72, 0.9),
 		"sun_rot": Vector3(-32, 0, 0), "sun_color": Color(1.0, 0.9, 0.78), "sun_energy": 1.55, "sun_tint": Color(1.0, 0.75, 0.5),
 		"cloud_lit": Color(1.0, 0.95, 0.9), "cloud_shade": Color(0.74, 0.72, 0.9), "gap": Color(0.5, 0.52, 0.85),
-		"fog": Color(1.0, 0.9, 0.8), "fog_density": 0.0012, "fog_height": -6.0, "fog_height_density": 0.03,
+		"fog": Color(1.0, 0.9, 0.8), "fog_density": 0.00084, "fog_height": -6.0, "fog_height_density": 0.0120,
 		"planet": Vector3(-0.5, 0.3, -0.8), "planet_radius": 0.11, "planet_color": Color(0.9, 0.82, 1.0), "planet_band": Color(0.72, 0.64, 0.95),
 		"moon": Vector3(0.4, 0.4, -0.8), "stars": 0.1, "horizon_glow": 0.45, "ambient": 1.0,
 	},
@@ -91,7 +100,7 @@ static func apply(node: Node, name: String, keep_sun_yaw := false) -> Dictionary
 		env.background_mode = Environment.BG_SKY
 		env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 		env.ambient_light_energy = p.ambient
-		env.fog_enabled = true
+		env.fog_enabled = bool(Settings.get_v("fog"))
 		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 		env.fog_light_color = p.fog
 		env.fog_density = p.fog_density

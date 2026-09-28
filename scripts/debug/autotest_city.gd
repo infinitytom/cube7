@@ -106,10 +106,16 @@ func _run() -> void:
 	P.teleport(hub + Vector3(0, 0.3, 2.6))
 	await wait(0.2)
 	for k in 6:
+		if L.bridge._turning:
+			break
 		P.linear_velocity = Vector3(0, P.linear_velocity.y, -6.0)
 		await wait(0.05)
-	await wait(2.2)
-	check(P.global_position.y > hub.y - 1.0, "转桥的时候 PIX 还稳稳待在转盘上")
+	var low := 99.0
+	while L.bridge._turning:
+		low = minf(low, P.global_position.y - hub.y)
+		await wait(0.05)
+	check(low > -0.5, "转桥的时候 PIX 还稳稳待在转盘上（最低 %.2f m）" % low)
+	await wait(1.0)
 	check(L.bridge.dir == 0, "撞一下转钮，桥转过来接上议会广场（dir=%d flag=%s）" % [L.bridge.dir, SaveGame.flag("cc_bridge")])
 	# 桥面能走：从桥东端滚到议会广场
 	await tp(Vector3i(AreaCity.HUB.x - 4, AreaCity.GD, AreaCity.HUB.y))

@@ -55,7 +55,7 @@ var _air_jumps := 0
 var _jump_rising := false
 var _invuln := 0.0
 const POUND_RADIUS := 3.0
-const CHARGE_FULL := 0.9
+var CHARGE_FULL := 0.9          ## 改装“快速蓄力”后变短（Upgrades.charge_time）
 const CHARGED_SPEED := 15.0
 const BUBBLE_HOLD := 0.28
 ## 当前冲撞的力度（水平速度）；满蓄力冲刺时 charged_ram = true（能撞穿盾牌）
@@ -306,6 +306,69 @@ func _step_assist(dir: Vector3, delta: float) -> void:
 
 var allow_step := true
 
+# ---------------------------------------------------------------- 自动脱困
+## 1. 球心卡进了实心方块里（被重构/落下的方块压住）→ 往上找空地挪出去
+## 2. 一直推摇杆，1.2 秒几乎没动 → 自动小跳一下（卡在缝里、钻头掉进深坑）
+## 3. 连续三次还出不去 → 挪到上方最近的空地；实在不行回检查点
+var _stuck_t := 0.0
+var _stuck_pos := Vector3.ZERO
+var _stuck_hops := 0
+var _buried_t := 0.0
+
+func _unstick(delta: float, dir: Vector3) -> void:
+	if world == null or freeze or get_meta("riding", false) or _charging or debug_override and debug_input == Vector2.ZERO:
+		_stuck_t = 0.0
+		return
+	var r: float = FORMS[form].radius * BODY
+	# 真的被埋住：球心和上下左右都是实心，并且持续了 0.3 秒（钻头钻隧道时不算）
+	var buried := _drilling_t <= 0.0
+	if buried:
+		for o in [Vector3.ZERO, Vector3.UP * r * 0.6, Vector3.RIGHT * r * 0.6, Vector3.LEFT * r * 0.6, Vector3.FORWARD * r * 0.6, Vector3.BACK * r * 0.6]:
+			if world.vget(world.to_v(global_position + o)) == Blocks.AIR:
+				buried = false
+				break
+	_buried_t = _buried_t + delta if buried else 0.0
+	if _buried_t > 0.3:
+		_buried_t = 0.0
+		_pop_free()
+		return
+	if dir.length() < 0.3 or _ability_held():
+		_stuck_t = 0.0
+		_stuck_hops = 0
+		return
+	if global_position.distance_to(_stuck_pos) > 0.25:
+		_stuck_pos = global_position
+		_stuck_t = 0.0
+		return
+	_stuck_t += delta
+	if _stuck_t < 1.2:
+		return
+	_stuck_t = 0.0
+	_stuck_hops += 1
+	if _stuck_hops <= 2:
+		linear_velocity = dir.normalized() * 2.5 + Vector3.UP * (5.5 if form != DRILL else 6.5)
+		_no_snap = 0.3
+		launched(0.3)
+		Sfx.play("jump_" + str(FORMS[form].id), global_position, -8.0, 0.05)
+	else:
+		_stuck_hops = 0
+		_pop_free()
+
+func _pop_free() -> void:
+	var r: float = FORMS[form].radius * BODY
+	for k in range(1, 24):
+		var p := global_position + Vector3.UP * (k * 0.25)
+		var free := true
+		for o in [Vector3.ZERO, Vector3.UP * r, Vector3.DOWN * r * 0.7, Vector3.RIGHT * r * 0.7, Vector3.LEFT * r * 0.7, Vector3.FORWARD * r * 0.7, Vector3.BACK * r * 0.7]:
+			if world.vget(world.to_v(p + o)) != Blocks.AIR:
+				free = false
+				break
+		if free:
+			teleport(p + Vector3.UP * 0.1)
+			linear_velocity = Vector3.ZERO
+			return
+	GameState.respawn()
+
 func _physics_process(delta: float) -> void:
 	_ground_timer -= delta
 	_ability_cd -= delta
@@ -326,7 +389,7 @@ func _physics_process(delta: float) -> void:
 	_update_ability(delta, f, dir)
 
 	var boosting := _boost_held()
-	var max_s: float = f.boost_speed if boosting else f.max_speed
+	var max_s: float = (f.boost_speed if boosting else f.max_speed) * Upgrades.speed_mult()
 	var mul := 1.6 if boosting else 1.0
 	if dir.length() > 0.05:
 		var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
@@ -340,10 +403,11 @@ func _physics_process(delta: float) -> void:
 	_update_jump(delta, f)
 	_update_attack_state(delta)
 	_step_assist(dir, delta)
+	_unstick(delta, dir)
 
 	if _ground_timer > 0.0:
 		_puffs = 0
-		_air_jumps = int(f.air_jumps)
+		_air_jumps = int(f.air_jumps) + (Upgrades.level("bubble") if form == BUBBLE else 0)
 	_no_snap -= delta
 	_snap_to_ground()
 	# 滚动声：贴地时随速度变大、变尖
@@ -461,6 +525,7 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 				else:
 					_dash(DASH_SPEED, false)
 			if _charging:
+				CHARGE_FULL = Upgrades.charge_time()
 				if held:
 					_charge_t += delta
 					linear_velocity.x *= exp(-8.0 * delta)
@@ -468,6 +533,7 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 					var lvl := 0 if _charge_t < 0.3 else (1 if _charge_t < CHARGE_FULL else 2)
 					if lvl > _charge_lvl:
 						_charge_lvl = lvl
+						GameState.rumble(0.3 + lvl * 0.25, lvl * 0.2, 0.12)
 						Sfx.play("energy", global_position, -6.0 + lvl * 2.0, 0.0, 0.8 + lvl * 0.3)
 						if lvl == 2:
 							_burst(Color("ffe066"))
@@ -491,7 +557,7 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 				_drill_timer -= delta
 				_drilling_t = 0.15
 				if _drill_timer <= 0.0:
-					_drill_timer = 0.09
+					_drill_timer = 0.09 if Upgrades.level("drill") == 0 else 0.06
 					_drill(dir)
 		BUBBLE:
 			# 轻点：气浪；按住再松开：泡泡弹（困住敌人）
@@ -516,11 +582,12 @@ func _dash(speed: float, full: bool) -> void:
 	charged_ram = full
 	var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
 	# 冲撞辅助瞄准：前方 60° 扇形、7 米内有敌人就朝它冲（不用对得很准）
-	var aim := _aim_assist(_move_dir, 7.0, 60.0)
+	var aim := _aim_assist(_move_dir, 7.0, 60.0) if Settings.get_v("aim_assist") else Vector3.ZERO
 	if aim != Vector3.ZERO:
 		_move_dir = aim
 	apply_central_impulse((_move_dir * speed - vh) * mass)
 	_burst(FORMS[BALL].color if not full else Color("ffe066"))
+	GameState.rumble(0.35 if not full else 0.7, 0.2 if not full else 0.6, 0.12 if not full else 0.22)
 	Sfx.play("dash", global_position, -2.0 + (3.0 if full else 0.0), 0.05, 1.0 if not full else 0.8)
 	if full:
 		GameState.shake.emit(0.2)
@@ -549,6 +616,15 @@ func _aim_assist(dir: Vector3, reach: float, cone_deg: float) -> Vector3:
 			best_score = score
 			best = to.normalized()
 	return best
+
+## 水平朝向插值（避免 slerp 在正好反向时退化）
+func _turn_to(a: Vector3, b: Vector3, k: float) -> Vector3:
+	var v := a.lerp(b, k)
+	v.y = 0.0
+	if v.length() < 0.05:
+		v = a.rotated(Vector3.UP, 0.3)
+		v.y = 0.0
+	return v.normalized() if v.length() > 0.001 else Vector3.FORWARD
 
 ## 蓄力时的光球（滚球蓄力冲刺 / 气泡蓄泡泡弹）
 func _charge_fx(on: bool, t: float) -> void:
@@ -605,8 +681,9 @@ func stomp_bounce() -> void:
 	_jumped_now = true
 	_jump_rising = true
 	_no_snap = 0.3
-	_air_jumps = int(FORMS[form].air_jumps)
+	_air_jumps = int(FORMS[form].air_jumps) + (Upgrades.level("bubble") if form == BUBBLE else 0)
 	Sfx.play("boing", global_position, -2.0, 0.08)
+	GameState.rumble(0.45, 0.25, 0.1)
 	set_mood("happy", 0.5)
 	_ring_fx(FORMS[form].color, 1.0)
 
@@ -666,6 +743,7 @@ func hurt(from: Vector3, n := 1) -> void:
 	away.y = 0.0
 	linear_velocity = away.normalized() * 4.2 + Vector3.UP * 3.6
 	_no_snap = 0.4
+	GameState.rumble(0.9, 1.0, 0.35)
 	Sfx.play("hurt", Vector3.INF, -2.0, 0.05)
 	Sfx.play("pix_hurt", Vector3.INF, -8.0, 0.1)
 	GameState.shake.emit(0.35)
@@ -707,7 +785,7 @@ func _drill(dir: Vector3) -> void:
 	else:
 		# 往前钻出一条不规则的隧道：比主角宽一圈，洞壁参差不齐
 		var d := _move_dir.normalized()
-		n = world.break_sphere(global_position + d * 0.6 + Vector3.UP * 0.08, 0.64, "drill", 1.0, d)
+		n = world.break_sphere(global_position + d * 0.6 + Vector3.UP * 0.08, 0.64 + 0.1 * Upgrades.level("drill"), "drill", 1.0, d)
 	if n > 0:
 		GameState.shake.emit(0.05)
 		Sfx.play("drill", global_position, -6.0, 0.1)
@@ -718,7 +796,7 @@ func _handle_impacts() -> void:
 	if world == null:
 		return
 	for imp in list:
-		var speed: float = imp.speed
+		var speed: float = imp.speed * Upgrades.ram_mult()
 		var n: Vector3 = imp.normal
 		# 落地（撞的是脚下）打折：普通跳下来不会把地面砸穿，想砸地用钻头下砸。
 		# 高速滚过地面体素的接缝时，接触点在球底附近、法线却是斜的——也算“脚下”，免得把地面犁出沟
@@ -732,8 +810,6 @@ func _handle_impacts() -> void:
 		var center: Vector3 = imp.point - n * 0.25
 		var floor_y := -INF if (n.y > 0.55 or low) else global_position.y - r + 0.02
 		var count := world.break_sphere(center, radius, "impact", speed, imp.vel, false, floor_y)
-		if count >= 24:
-			GameState.hitstop(0.05)
 		if count == 0 and speed > 4.0 and n.y <= 0.55 and not low:
 			Sfx.play("thud", global_position, linear_to_db(clampf(speed / 12.0, 0.2, 1.0)), 0.1)
 			_hardness_hint(center, speed)
@@ -1099,7 +1175,7 @@ func _process(delta: float) -> void:
 	var hv := Vector3(linear_velocity.x, 0, linear_velocity.z)
 	if hv.length() > 0.6:
 		_idle_t = 0.0
-		_face_dir = _face_dir.slerp(hv.normalized(), 1.0 - exp(-8.0 * delta)).normalized()
+		_face_dir = _turn_to(_face_dir, hv.normalized(), 1.0 - exp(-8.0 * delta))
 	else:
 		# 停下来一会儿，就转过头看看镜头（看着玩家）
 		_idle_t += delta
@@ -1108,7 +1184,7 @@ func _process(delta: float) -> void:
 			var to_cam := cam.global_position - global_position
 			to_cam.y = 0.0
 			if to_cam.length() > 0.1:
-				_face_dir = _face_dir.slerp(to_cam.normalized(), 1.0 - exp(-3.0 * delta)).normalized()
+				_face_dir = _turn_to(_face_dir, to_cam.normalized(), 1.0 - exp(-3.0 * delta))
 	var origin := get_global_transform_interpolated().origin
 	var r: float = FORMS[form].radius / 0.48 * BODY
 	var fb := Basis.looking_at(_face_dir, Vector3.UP)

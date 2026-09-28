@@ -7,6 +7,7 @@ extends Node3D
 @export var center := Vector3(32, 0, 26)
 @export var cloud_count := 22
 @export var bird_flocks := 3
+@export var show_sea := true      ## 第五章用自己的锈海，不要云海
 
 var _clouds: Array[Node3D] = []
 var _speeds: Array[float] = []
@@ -25,6 +26,7 @@ func _ready() -> void:
 	sea.position = Vector3(center.x, sea_height, center.z)
 	sea.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(sea)
+	sea.visible = show_sea
 	_sync_colors.call_deferred()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7

@@ -97,7 +97,7 @@ func _process(delta: float) -> void:
 	if _target:
 		_pivot = _pivot.lerp(_target_pos(), 1.0 - exp(-14.0 * delta))
 
-	var want := model_distance if model_view else distance
+	var want := model_distance if model_view else distance * float(Settings.get_v("cam_dist"))
 	var base_pitch := -0.95 if model_view else pitch
 
 	# 选一个不被墙挡住的抬升量（从上方越过箱庭的墙）。带滞回：

@@ -7,6 +7,11 @@ var _last := {}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS   # 暂停菜单里也要有音效
+	# 启动时把所有音效预先载入（以前第一次播放某个音效时才从磁盘读，会卡一下）
+	for f in DirAccess.get_files_at("res://audio/sfx"):
+		var n := f.trim_suffix(".import").trim_suffix(".remap")
+		if n.ends_with(".ogg") and not _cache.has(n.get_basename()):
+			_cache[n.get_basename()] = load("res://audio/sfx/" + n)
 
 func _stream(n: String) -> AudioStream:
 	if not _cache.has(n):

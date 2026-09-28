@@ -19,6 +19,9 @@ signal objective_changed(index: int, text: String, pos: Vector3)
 signal shake(amount: float)
 
 const ENERGY_PER_SHIELD := 10
+var energy_per_shield := 10          ## 改装“能源回路”后变成 7
+@warning_ignore("unused_signal")
+signal upgrades_changed
 
 var coins := 0
 var energy := 0
@@ -38,7 +41,12 @@ var blocks_broken := 0:
 signal matter_changed(value: int)
 var matter := 0
 
+var _matter_frac := 0.0
 func add_matter(n: int) -> void:
+	if n > 0:
+		_matter_frac += n * Upgrades.matter_mult()
+		n = int(_matter_frac)
+		_matter_frac -= n
 	matter = maxi(0, matter + n)
 	matter_changed.emit(matter)
 
@@ -113,6 +121,7 @@ func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count
 	fragment_logs = []
 	coins = 0
 	energy = 0
+	Upgrades.apply()
 	shield = max_shield
 	blocks_broken = 0
 	enemies_defeated = 0
@@ -149,15 +158,21 @@ func add_fragment(log_text: String) -> void:
 
 # ---------------------------------------------------------------- 收集
 
+var _upgrade_hint := false
 func add_coins(n: int) -> void:
 	coins += n
 	coins_changed.emit(coins)
+	# 第一次攒够买得起一个改装：提醒一下
+	if not _upgrade_hint and coins >= 150 and not SaveGame.flag("hint_upgrade"):
+		_upgrade_hint = true
+		SaveGame.set_flag("hint_upgrade")
+		say("金币攒了不少！打开菜单里的「改装 PIX」，可以给你升级护盾、冲撞和速度。")
 
 func add_energy(n: int) -> void:
 	energy += n
 	# 每 10 点能源自动修复 1 格护盾
-	while energy >= ENERGY_PER_SHIELD and shield < max_shield:
-		energy -= ENERGY_PER_SHIELD
+	while energy >= energy_per_shield and shield < max_shield:
+		energy -= energy_per_shield
 		shield += 1
 		shield_changed.emit(shield)
 	energy_changed.emit(energy)
@@ -188,10 +203,18 @@ func hitstop(secs: float) -> void:
 		return
 	var now := Time.get_ticks_msec()
 	_hitstop_until = maxi(_hitstop_until, now + int(secs * 1000.0))
-	Engine.time_scale = 0.06
+	Engine.time_scale = 0.25
 	get_tree().create_timer(secs, true, false, true).timeout.connect(func() -> void:
 		if Time.get_ticks_msec() >= _hitstop_until - 5:
 			Engine.time_scale = 1.0)
+
+## 手柄震动：weak = 高频小马达，strong = 低频大马达（0..1），按设置里的强度缩放
+func rumble(weak: float, strong: float, secs: float) -> void:
+	var k := float(Settings.get_v("rumble"))
+	if k <= 0.0:
+		return
+	for d in Input.get_connected_joypads():
+		Input.start_joy_vibration(d, clampf(weak * k, 0.0, 1.0), clampf(strong * k, 0.0, 1.0), secs)
 
 func say(text: String) -> void:
 	nova_say.emit(text)
@@ -200,6 +223,8 @@ func say(text: String) -> void:
 
 func _ready() -> void:
 	_bind_ui_pad()
+	# 震屏的地方同时震手柄（撞碎东西、下砸、爆炸、Boss……）
+	shake.connect(func(a: float) -> void: rumble(clampf(a * 0.7, 0.0, 1.0), clampf(a * 1.1, 0.0, 1.0), 0.08 + a * 0.25))
 
 ## Godot 自带的 ui_accept / ui_cancel 不含手柄键：补上 ✕/A 确认、○/B 返回、十字键和左摇杆导航
 func _bind_ui_pad() -> void:

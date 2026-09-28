@@ -12,6 +12,7 @@ var _coins: Label
 var _matter: Label
 var _energy_bar: ProgressBar
 var _shields: Array[UIIcon] = []
+var _shield_row: HBoxContainer
 var _frag_row: HBoxContainer
 var _frag: Label
 var _seeds: Label
@@ -67,6 +68,7 @@ func _ready() -> void:
 	add_child(_pause)
 	GameState.coins_changed.connect(func(_v: int) -> void: _refresh_stats(true))
 	GameState.energy_changed.connect(func(_v: int) -> void: _refresh_stats())
+	GameState.upgrades_changed.connect(_rebuild_shields)
 	GameState.matter_changed.connect(func(v: int) -> void: _matter.text = str(v))
 	GameState.shield_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.fragments_changed.connect(func(_v: int) -> void: _refresh_stats())
@@ -245,7 +247,7 @@ func _build_stats() -> void:
 	e_row.add_child(UIIcon.make("energy", UIKit.ACCENT, 22))
 	_energy_bar = ProgressBar.new()
 	_energy_bar.show_percentage = false
-	_energy_bar.max_value = GameState.ENERGY_PER_SHIELD
+	_energy_bar.max_value = GameState.energy_per_shield
 	_energy_bar.custom_minimum_size = Vector2(150, 10)
 	_energy_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var bg := UIKit.panel(Color(1, 1, 1, 0.1), Color(0, 0, 0, 0), 5, 0)
@@ -255,10 +257,8 @@ func _build_stats() -> void:
 	_energy_bar.add_theme_stylebox_override("background", bg)
 	_energy_bar.add_theme_stylebox_override("fill", fg)
 	e_row.add_child(_energy_bar)
-	for i in GameState.max_shield:
-		var s := UIIcon.make("shield", UIKit.GOOD, 20)
-		_shields.append(s)
-		e_row.add_child(s)
+	_shield_row = e_row
+	_rebuild_shields()
 	v.add_child(e_row)
 	_frag_row = HBoxContainer.new()
 	_frag_row.add_theme_constant_override("separation", 10)
@@ -270,6 +270,19 @@ func _build_stats() -> void:
 	_seeds = UIKit.label("0 / 3", 20, Color("b8ffe2"), true)
 	_frag_row.add_child(_seeds)
 	v.add_child(_frag_row)
+
+func _rebuild_shields() -> void:
+	for sh in _shields:
+		sh.queue_free()
+	_shields.clear()
+	for i in GameState.max_shield:
+		var sh := UIIcon.make("shield", UIKit.GOOD, 20)
+		_shields.append(sh)
+		_shield_row.add_child(sh)
+	if _energy_bar:
+		_energy_bar.max_value = GameState.energy_per_shield
+	if _seeds:
+		_refresh_stats()
 
 func _build_objective() -> void:
 	_obj_card = PanelContainer.new()
@@ -378,7 +391,7 @@ func _refresh_stats(pop := false) -> void:
 		var tw := create_tween()
 		_coins.scale = Vector2(1.25, 1.25)
 		tw.tween_property(_coins, "scale", Vector2.ONE, 0.18)
-	_energy_bar.value = GameState.energy if GameState.shield < GameState.max_shield else GameState.ENERGY_PER_SHIELD
+	_energy_bar.value = GameState.energy if GameState.shield < GameState.max_shield else GameState.energy_per_shield
 	for i in _shields.size():
 		_shields[i].filled = i < GameState.shield
 		_shields[i].queue_redraw()

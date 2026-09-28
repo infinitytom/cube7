@@ -154,3 +154,44 @@ static func city(level: Node3D, world: VoxelWorld) -> Vista:
 	if v.sync_build:
 		print("[Vista] 同步生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
 	return v
+
+## 第五章 · 锈海：一直铺到天边的锈色海面；四周是半沉的巨船残骸、锈岩柱；远处的方舟和四座已经亮起的塔
+static func rust(level: Node3D, world: VoxelWorld) -> Vista:
+	var t0 := Time.get_ticks_msec()
+	var sea := 6.0
+	var sky := SkyWorld.new()
+	sky.center = Vector3(40, 0, 45)
+	sky.sea_height = sea
+	sky.show_sea = false
+	sky.bird_flocks = 2
+	level.add_child(sky)
+	var v := Vista.new()
+	v.name = "Vista"
+	v.sea_y = sea
+	if Array(OS.get_cmdline_user_args()).any(func(a: String) -> bool: return a.begins_with("--shots") or a.begins_with("--autotest") or a == "--sync-vista"):
+		v.sync_build = true
+	level.add_child(v)
+	# 巨船残骸：一圈半沉在海里
+	var wrecks := [
+		[Vector3(-60, sea, 40), 0.4, {"len": 90, "w": 18, "h": 16, "seed": 601, "bow_up": 0.25, "sink": 7}],
+		[Vector3(40, sea, -70), 1.9, {"len": 120, "w": 22, "h": 18, "seed": 602, "bow_up": 0.1, "sink": 8}],
+		[Vector3(150, sea, 130), -0.8, {"len": 70, "w": 14, "h": 12, "seed": 603, "bow_up": 0.4, "sink": 5}],
+		[Vector3(-30, sea, 150), 2.8, {"len": 60, "w": 12, "h": 11, "seed": 604, "sink": 6}],
+		[Vector3(170, sea, -30), 1.2, {"len": 100, "w": 20, "h": 16, "seed": 605, "bow_up": 0.15, "sink": 9}],
+	]
+	for w in wrecks:
+		v.add("wreck", w[2], w[0], w[1], {})
+	for k in 6:
+		var a := k * TAU / 6.0 + 0.5
+		var d := 260.0 + (k % 3) * 90.0
+		v.add("wreck", {"len": 120, "w": 24, "h": 20, "seed": 620 + k, "voxel": 2.0, "bow_up": 0.1 * (k % 3), "sink": 10}, Vector3(40 + cos(a) * d, sea, 45 + sin(a) * d), a, {})
+	# 锈岩柱
+	v.add("pillar", {"r": 6.0, "h": 50, "seed": 611, "rust": true, "tree": false}, Vector3(-25, sea - 6, -20), 0.0)
+	v.add("pillar", {"r": 4.0, "h": 38, "seed": 612, "rust": true, "tree": false}, Vector3(110, sea - 6, -40), 0.0)
+	v.add("pillar", {"r": 5.0, "h": 44, "seed": 613, "rust": true, "tree": false}, Vector3(120, sea - 6, 110), 0.0)
+	v.add("pillar", {"r": 3.5, "h": 30, "seed": 614, "rust": true, "tree": false}, Vector3(-40, sea - 6, 100), 0.0)
+	_ark_and_towers(v, 4, sea - 30.0)
+	if v.sync_build:
+		print("[Vista] 同步生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
+	return v
+

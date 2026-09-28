@@ -15,6 +15,7 @@ static func build(kind: String, p: Dictionary) -> Dictionary:
 		"truss": return truss(p)
 		"shard": return shard(p)
 		"city_island": return city_island(p)
+		"wreck": return wreck(p)
 	push_error("VistaBuilder: unknown kind " + kind)
 	return island(p)
 
@@ -213,14 +214,17 @@ static func pillar(p: Dictionary) -> Dictionary:
 				var dv := Vector2(x + 0.5, z + 0.5) - c
 				if dv.length() <= rad + n.get_noise_3d(x, y * 0.5, z) * 1.6:
 					var band := int(floor((y + n.get_noise_2d(x, z) * 2.0) / 3.0)) % 3
-					gr.s(x, y, z, [Blocks.CLIFF, Blocks.CLIFF_B, Blocks.CLIFF_C][band])
+					if p.get("rust", false):
+						gr.s(x, y, z, [Blocks.RUSTROCK, Blocks.RUST, Blocks.RUSTROCK][band])
+					else:
+						gr.s(x, y, z, [Blocks.CLIFF, Blocks.CLIFF_B, Blocks.CLIFF_C][band])
 	# 顶面草皮
 	for z in W:
 		for x in W:
 			for y in range(Hh + 2, 0, -1):
 				if gr.g(x, y, z) != 0:
-					gr.s(x, y, z, Blocks.GRASS)
-					if gr.g(x, y - 1, z) != 0:
+					gr.s(x, y, z, Blocks.RUSTDUNE if p.get("rust", false) else Blocks.GRASS)
+					if gr.g(x, y - 1, z) != 0 and not p.get("rust", false):
 						gr.s(x, y - 1, z, Blocks.DIRT)
 					break
 	var ty := Hh
@@ -493,3 +497,62 @@ static func city_island(p: Dictionary) -> Dictionary:
 		else:
 			gr.box(Vector3i(bx, base + hh, bz), Vector3i(bx, base + hh + rng.randi_range(3, 8), bz), Blocks.HULL_DARK)
 	return isl
+
+## 半沉在锈海里的巨船残骸：U 形船壳（有破洞）、船楼、断掉的桅杆。anchor = 船中央的吃水线
+##   len 船长、w 船宽、h 船高、sink 沉下去的深度、tilt 横倾（每格高度偏移）、bow_up 船头翘起
+static func wreck(p: Dictionary) -> Dictionary:
+	var L: int = p.get("len", 60)
+	var Wd: int = p.get("w", 14)
+	var Hh: int = p.get("h", 12)
+	var vs: float = p.get("voxel", 1.0)
+	var seed_v: int = p.get("seed", 9)
+	var bow_up: float = p.get("bow_up", 0.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var n := _noise(seed_v, 0.12)
+	var extra := int(bow_up * L) + 24
+	var gr := VistaGrid.new(Vector3i(L + 2, Hh + extra, Wd + 4), vs)
+	var cz := (Wd + 4) * 0.5
+	for i in L:
+		var t := float(i) / (L - 1)
+		var taper := clampf(minf(t * 1.6, (1.0 - t) * 4.0), 0.25, 1.0)
+		var w := Wd * 0.5 * taper
+		var lift := int(bow_up * L * pow(t, 3.0))
+		var rib := i % 5 == 0
+		for y in Hh:
+			for z in Wd + 4:
+				var zz := (z + 0.5 - cz)
+				var f := float(y) / Hh
+				var half := w * (0.55 + 0.45 * sqrt(f))
+				var d := absf(zz)
+				if d > half:
+					continue
+				var shell := d > half - 1.2 or y == 0
+				var deck := y == Hh - 1
+				if not shell and not deck:
+					continue
+				# 锈穿的破洞
+				if n.get_noise_3d(i * 1.0, y * 1.0, z * 1.0) > 0.42 and not rib:
+					continue
+				var tp := Blocks.HULL_DARK if rib else (Blocks.RUST if (i + y) % 6 else Blocks.RUSTROCK)
+				if deck:
+					tp = Blocks.PLANK if i % 4 else Blocks.RUST
+				gr.s(i, y + lift, z, tp)
+	# 船楼
+	var bx := int(L * 0.2)
+	for y in range(Hh, Hh + 7):
+		for z in range(int(cz - Wd * 0.3), int(cz + Wd * 0.3)):
+			for x in range(bx, bx + 8):
+				var edge := x == bx or x == bx + 7 or z == int(cz - Wd * 0.3) or z == int(cz + Wd * 0.3) - 1 or y == Hh + 6
+				if edge:
+					gr.s(x, y, z, Blocks.HULL_DARK if y % 3 else Blocks.RUST)
+	# 桅杆（断的）
+	for k in 2:
+		var mx := int(L * (0.45 + k * 0.2))
+		var mh := rng.randi_range(10, 20)
+		for y in range(Hh, Hh + mh):
+			gr.s(mx, y, int(cz), Blocks.RUST)
+		for z in range(int(cz) - 4, int(cz) + 5):
+			gr.s(mx, Hh + mh - 3, z, Blocks.RUST)
+	return {"grid": gr, "falls": [], "anchor": Vector3(L * 0.5, float(p.get("sink", 5)), cz) * vs}
+

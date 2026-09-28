@@ -126,5 +126,5 @@ func _physics_process(delta: float) -> void:
 			turn()
 			var away := p.global_position - global_position
 			away.y = 0.0
-			p.linear_velocity = away.normalized() * 0.6 + Vector3.UP * 3.5   # 轻轻弹起，落回转盘上，不会被甩下桥
+			p.linear_velocity = -away * 1.2 + Vector3.UP * 3.8   # 轻轻弹起，落回转盘正中（桥转的时候站在转盘上不会被甩下去）
 			p.launched(0.2)
