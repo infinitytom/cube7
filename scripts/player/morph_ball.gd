@@ -29,6 +29,8 @@ const FORMS: Array[Dictionary] = [
 ]
 
 const IMPACT_MIN := 1.8
+## 主角整体缩放：体素改成 0.25 米后，主角相对世界显得更小巧
+const BODY := 0.78
 const DASH_SPEED := 11.5
 const GRAB_RANGE := 2.8
 
@@ -93,6 +95,7 @@ func _ready() -> void:
 		add_child(_shape_node)
 	_visual_root = Node3D.new()
 	_visual_root.name = "Visual"
+	_visual_root.scale = Vector3.ONE * BODY
 	add_child(_visual_root)
 	_build_visuals()
 	_build_face()
@@ -199,7 +202,7 @@ func apply_form(i: int, fx: bool) -> void:
 		_shape_node.shape = b
 	else:
 		var s := SphereShape3D.new()
-		s.radius = f.radius
+		s.radius = f.radius * BODY
 		_shape_node.shape = s
 	for k in _visuals.size():
 		_visuals[k].visible = k == i
@@ -208,7 +211,7 @@ func apply_form(i: int, fx: bool) -> void:
 	if fx:
 		_visual_root.scale = Vector3.ONE * 0.45
 		var tw := create_tween()
-		tw.tween_property(_visual_root, "scale", Vector3.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(_visual_root, "scale", Vector3.ONE * BODY, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		_burst(f.color)
 		Sfx.play("morph", Vector3.INF, -4.0)
 		Sfx.play("pix_morph", Vector3.INF, -9.0, 0.12)
@@ -232,11 +235,14 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		state.transform = Transform3D(Basis(), state.transform.origin)
 		state.angular_velocity = Vector3.ZERO
 	var on_ground := false
+	var wall := false
 	var best_impact := {}
 	for i in state.get_contact_count():
 		var n := state.get_contact_local_normal(i)
 		if n.y > 0.55:
 			on_ground = true
+		elif n.y < 0.3:
+			wall = true
 		var col := state.get_contact_collider_object(i)
 		if col is Node and (col as Node).is_in_group("voxel_body"):
 			var speed := -_prev_vel.dot(n)
@@ -244,10 +250,46 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 				best_impact = {"point": state.get_contact_collider_position(i), "normal": n, "speed": speed, "vel": _prev_vel}
 	if not best_impact.is_empty():
 		_impacts.append(best_impact)
+	# 空中撞墙：滚动的旋转会被墙面摩擦转成向上的速度（“爬墙”），球越小越明显——撞墙时去掉旋转
+	if wall and not on_ground:
+		state.angular_velocity *= 0.2
+		if state.linear_velocity.y > _prev_vel.y + 0.5 and not _jumped_now:
+			state.linear_velocity.y = _prev_vel.y
+	_jumped_now = false
 	if on_ground:
 		_ground_timer = 0.12
 	grounded = on_ground
 	_prev_vel = state.linear_velocity
+
+## 小台阶辅助：体素只有 0.25 米，地上难免有一两格的小坎（树根、崩边、坑）。
+## 往前推却被矮坎挡住时，轻轻把球托上去，不用专门跳。
+var _step_cd := 0.0
+
+func _step_assist(dir: Vector3, delta: float) -> void:
+	_step_cd -= delta
+	if _step_cd > 0.0 or dir.length() < 0.3 or not grounded or _jump_rising or not allow_step:
+		return
+	var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
+	var d := dir.normalized()
+	if vh.dot(d) > 1.2:
+		return
+	var r: float = FORMS[form].radius * BODY
+	var space := get_world_3d().direct_space_state
+	var base := global_position + Vector3.DOWN * (r - 0.06)
+	var low := PhysicsRayQueryParameters3D.create(base, base + d * (r + 0.2), 1 | 8, [get_rid()])
+	if space.intersect_ray(low).is_empty():
+		return
+	var hi_o := global_position + Vector3.DOWN * r + Vector3.UP * 0.34
+	var high := PhysicsRayQueryParameters3D.create(hi_o, hi_o + d * (r + 0.3), 1 | 8, [get_rid()])
+	if not space.intersect_ray(high).is_empty():
+		return
+	# 坎的上方要有地方站
+	linear_velocity = Vector3(d.x * maxf(vh.length(), 1.6), 3.0, d.z * maxf(vh.length(), 1.6))
+	_no_snap = 0.15
+	_step_cd = 0.25
+	_jumped_now = true
+
+var allow_step := true
 
 func _physics_process(delta: float) -> void:
 	_ground_timer -= delta
@@ -282,6 +324,7 @@ func _physics_process(delta: float) -> void:
 
 	_update_jump(delta, f)
 	_update_attack_state(delta)
+	_step_assist(dir, delta)
 
 	if _ground_timer > 0.0:
 		_puffs = 0
@@ -317,7 +360,7 @@ func _snap_to_ground() -> void:
 		return
 	if linear_velocity.y <= 0.0:
 		return
-	var r: float = FORMS[form].radius
+	var r: float = FORMS[form].radius * BODY
 	var q := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3.DOWN * (r + 0.45), 1 | 8, [get_rid()])
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not hit.is_empty():
@@ -358,7 +401,10 @@ func _update_jump(delta: float, f: Dictionary) -> void:
 	if glide > 0.0 and held and linear_velocity.y < -glide and _ground_timer <= 0.0:
 		linear_velocity.y = move_toward(linear_velocity.y, -glide, 30.0 * delta)
 
+var _jumped_now := false
+
 func _do_jump(v: float) -> void:
+	_jumped_now = true
 	_ground_timer = 0.0
 	_jump_rising = true
 	_no_snap = 0.25
@@ -908,7 +954,7 @@ func _process(delta: float) -> void:
 			if to_cam.length() > 0.1:
 				_face_dir = _face_dir.slerp(to_cam.normalized(), 1.0 - exp(-3.0 * delta)).normalized()
 	var origin := get_global_transform_interpolated().origin
-	var r: float = FORMS[form].radius / 0.48
+	var r: float = FORMS[form].radius / 0.48 * BODY
 	var fb := Basis.looking_at(_face_dir, Vector3.UP)
 	if form == DRILL:
 		fb = fb * Basis(Vector3.RIGHT, 0.65)   # 钻头朝前，脸往上挪一点

@@ -10,16 +10,16 @@ var _pending := {}      # 名称 -> Array[Transform3D]
 var _pending_cells := {}
 
 const KINDS := {
-	"grass": {"tip": Color("9cf0c4"), "base": Color("46b884")},
-	"flower_red": {"tip": Color("ff7aa8"), "base": Color("46b884")},
-	"flower_yellow": {"tip": Color("ffd769"), "base": Color("46b884")},
-	"flower_white": {"tip": Color("fdf6ff"), "base": Color("46b884")},
-	"flower_blue": {"tip": Color("9aa8ff"), "base": Color("46b884")},
+	"grass": {"tip": Color("b5d86a"), "base": Color("4f8f3c")},
+	"flower_red": {"tip": Color("ff7aa8"), "base": Color("4f8f3c")},
+	"flower_yellow": {"tip": Color("ffd769"), "base": Color("4f8f3c")},
+	"flower_white": {"tip": Color("fdf6ff"), "base": Color("4f8f3c")},
+	"flower_blue": {"tip": Color("9aa8ff"), "base": Color("4f8f3c")},
 }
 
 func setup(w: VoxelWorld) -> void:
 	world = w
-	world.block_changed.connect(_on_block_changed)
+	world.cell_changed.connect(_on_block_changed)
 
 ## 在地面方块 cell 的顶上放一个装饰
 func add(kind: String, cell: Vector3i, rng: RandomNumberGenerator) -> void:

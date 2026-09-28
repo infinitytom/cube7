@@ -20,13 +20,13 @@ func spawn_yaw() -> float:
 ## 用体素包围盒（含两端）放置一个区域
 func zone(script: GDScript, a: Vector3i, b: Vector3i, props := {}) -> Node:
 	var z: Node3D = script.new()
-	z.set("box_size", Vector3((b - a).abs() + Vector3i.ONE) * VoxelWorld.VOXEL)
+	z.set("box_size", Vector3((b - a).abs() + Vector3i.ONE) * VoxelWorld.CELL_M)
 	for k in props:
 		z.set(k, props[k])
 	add_child(z)
 	var lo := Vector3i(mini(a.x, b.x), mini(a.y, b.y), mini(a.z, b.z))
 	var hi := Vector3i(maxi(a.x, b.x), maxi(a.y, b.y), maxi(a.z, b.z))
-	z.global_position = world.to_global(Vector3(lo + hi + Vector3i.ONE) * VoxelWorld.VOXEL * 0.5)
+	z.global_position = world.to_global(Vector3(lo + hi + Vector3i.ONE) * VoxelWorld.CELL_M * 0.5)
 	return z
 
 func talk(a: Vector3i, b: Vector3i, lines: Array) -> void:
@@ -55,7 +55,7 @@ func coin_line(a: Vector3i, b: Vector3i, n: int) -> void:
 
 ## 地表高度：列 (x, z) 最高的实心方块上方那一格的 y（没有地面返回 -1）
 func surface_y(x: int, z: int) -> int:
-	for y in range(world.size.y - 2, -1, -1):
+	for y in range(world.csize.y - 2, -1, -1):
 		if world.get_block(Vector3i(x, y, z)) != Blocks.AIR:
 			return y + 1 if world.get_shape(Vector3i(x, y, z)) == 0 else -1
 	return -1
@@ -92,10 +92,17 @@ func deco(path: String, x: int, z: int, height_m: float, solid := "box", yaw := 
 		p.rotation.y = yaw
 	return p
 
-## 一棵树（Kenney 模型，可以撞飞）。h / r 沿用体素树的参数，换算成大致高度
-func tree(base: Vector3i, h: int, r: float) -> Prop:
-	var hm := h * VoxelWorld.VOXEL + r * 0.6
-	return prop(Kit.TREES[rng.randi() % Kit.TREES.size()], base, hm, true, 2, "trunk")
+## 一棵体素树（0.25 米精度，树叶撞得碎、树干要钻）。base = 地面上方那一格；h 为树干高度（格），r 为树冠半径（格）
+func tree(base: Vector3i, h: int, r: float, kind := "") -> void:
+	if kind == "":
+		var roll := rng.randf()
+		kind = "pine" if roll < 0.35 else ("blossom" if roll < 0.45 else "round")
+	var root := Vector3i(base.x * VoxelWorld.CELL, base.y * VoxelWorld.CELL, base.z * VoxelWorld.CELL)
+	# 贴地：往下找到真正的地面体素
+	while root.y > 0 and world.vget(root + Vector3i.DOWN) == Blocks.AIR:
+		root.y -= 1
+	var trunk := int(h * VoxelWorld.CELL * (1.1 if kind == "pine" else 0.85))
+	world.put_tree(root, trunk, r * VoxelWorld.CELL_M * (0.85 if kind == "pine" else 0.9), kind, rng)
 
 ## 在地面格 base（空气格，下方是地面）上放一个道具
 func prop(path: String, base: Vector3i, height_m: float, breakable := true, coins := 1, solid := "trunk", sound := "break_wood") -> Prop:

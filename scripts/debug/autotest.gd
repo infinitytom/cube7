@@ -86,7 +86,11 @@ func _run() -> void:
 	# 5. 砂块失去支撑会塌落
 	W.try_break(Vector3i(17, 4, 37), "drill", 1.0)
 	await wait(0.4)
-	check(W.get_block(Vector3i(17, 4, 37)) == Blocks.SAND and W.get_block(Vector3i(17, 5, 37)) == Blocks.AIR, "砂块塌落")
+	var left := 0
+	for d in [Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(0, 1, 0), Vector3i(1, 1, 0), Vector3i(0, 0, 1), Vector3i(1, 0, 1), Vector3i(0, 1, 1), Vector3i(1, 1, 1)]:
+		if W.vget(Vector3i(17, 5, 37) * VoxelWorld.CELL + d) == Blocks.SAND:
+			left += 1
+	check(W.get_block(Vector3i(17, 4, 37)) == Blocks.SAND and left < 8, "砂块塌落（上方一格剩 %d/8）" % left)
 
 	# 6. 钻头钻穿岩壁
 	await tp(Vector3i(49, 4, 32), Vector3.ZERO, MorphBall.DRILL)
@@ -282,7 +286,10 @@ func _chunk_test() -> void:
 	W.fill_box(Vector3i(26, 5, 45), Vector3i(27, 5, 45), Blocks.DIRT)
 	await wait(0.2)
 	W.try_break(Vector3i(25, 5, 45), "drill", 1.0)
-	W.detach_floating([Vector3i(25, 5, 45)] as Array[Vector3i])
+	var fine: Array[Vector3i] = []
+	for d in [Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(0, 1, 0), Vector3i(1, 1, 0), Vector3i(0, 0, 1), Vector3i(1, 0, 1), Vector3i(0, 1, 1), Vector3i(1, 1, 1)]:
+		fine.append(Vector3i(25, 5, 45) * VoxelWorld.CELL + d)
+	W.detach_floating(fine)
 	var chunks := W.find_children("*", "VoxelChunk", false, false)
 	var n := 0
 	for c in W.get_children():

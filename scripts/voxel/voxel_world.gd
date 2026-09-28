@@ -1,16 +1,25 @@
 class_name VoxelWorld
 extends Node3D
-## 轻量体素世界：固定大小的方块网格，按 16³ 分块生成网格与碰撞。
+## 轻量体素世界：固定大小的方块网格。
+## 两套坐标：
+##   · 体素（voxel，0.25 米）——引擎内部、破坏、网格都用它，函数名以 v 开头（vget / vset / vfill …）
+##   · 格（cell，0.5 米 = 2×2×2 体素）——关卡搭建和谜题逻辑用它（get_block / set_block / fill_box …）
+## 网格：每 8³ 体素算一个小区块（破坏时只重建很小一块），每 2×2×2 个小区块合并成一个渲染/碰撞节点（减少绘制调用）。
 ## 只负责“方块数据 + 显示 + 破坏”，谜题逻辑通过信号监听它。
-## 以后若换成 Voxel Tools，只需保持 get_block / set_block / try_break 这几个接口不变。
+## 以后若换成 Voxel Tools，只需保持 vget / vset / vbreak 这几个接口不变。
 
 signal block_changed(pos: Vector3i, old_type: int, new_type: int)
 signal block_broken(pos: Vector3i, type: int)
 signal item_dropped(item_id: String, world_pos: Vector3)
+## 同 block_changed，但坐标换算成“格”（给关卡/谜题/装饰用）
+signal cell_changed(cell: Vector3i, old_type: int, new_type: int)
 
-const VOXEL := 0.5          ## 1 体素 = 0.5 米
+const VOXEL := 0.25         ## 1 体素 = 0.25 米
+const CELL := 2             ## 1 格 = 2 体素 = 0.5 米（关卡搭建单位）
+const CELL_M := VOXEL * CELL
+const GROUP := 2            ## 每个渲染节点合并 GROUP³ 个小区块
 const CHUNK := 8            ## 小区块：破坏时只需重建很小的一块，避免卡顿
-const FALL_STEP := 0.05     ## 砂块下落一格的间隔（秒）
+const FALL_STEP := 0.025    ## 砂块下落一个体素的间隔（秒）
 
 const DIRS: Array[Vector3i] = [
 	Vector3i(1, 0, 0), Vector3i(-1, 0, 0),
@@ -41,14 +50,19 @@ const SHAPE_HEIGHTS := {
 	9: [0.0, 1.0, 1.0, 0.0], 10: [1.0, 0.0, 0.0, 1.0], 11: [0.0, 0.0, 1.0, 1.0], 12: [1.0, 1.0, 0.0, 0.0],
 }
 
-@export var size := Vector3i(112, 32, 64)
+@export var size := Vector3i(224, 64, 128)
+var csize := Vector3i(112, 32, 64)
 
 var data := PackedByteArray()
 ## 形状：0 = 立方体，其余为斜坡（见 SHAPE_HEIGHTS）
 var shapes := PackedByteArray()
 var _lin_colors := PackedColorArray()
-var _chunks := {}
+var _chunks := {}          ## 渲染组坐标 -> 节点
+var _sub := {}             ## 小区块坐标 -> [网格数组, 碰撞三角形, 玻璃碰撞三角形]
+var _gdirty := {}
 var _dirty := {}
+var _cell_hit := {}        ## 已经掉过落物的格（一格只掉一次金币/能量/道具）
+var _cell_shapes := {}
 var _falling := {}
 var _fall_timer := 0.0
 var _materials: Array[Material] = []
@@ -81,20 +95,26 @@ func _shader_mat(path: String) -> ShaderMaterial:
 	return m
 
 ## 关卡开始时调用：按新尺寸清空世界
+## new_size 按“格”计
 func setup(new_size: Vector3i) -> void:
 	for c in _chunks.values():
 		(c["mesh"] as Node).queue_free()
 	_chunks.clear()
+	_sub.clear()
+	_gdirty.clear()
 	_dirty.clear()
 	_falling.clear()
-	size = new_size
+	_cell_hit.clear()
+	_cell_shapes.clear()
+	csize = new_size
+	size = new_size * CELL
 	data.resize(size.x * size.y * size.z)
 	data.fill(Blocks.AIR)
 	shapes.resize(data.size())
 	shapes.fill(0)
 
 ## 关卡搭建用：快速填一整列（不发信号）
-func fill_column(x: int, z: int, y0: int, y1: int, t: int) -> void:
+func vfill_column(x: int, z: int, y0: int, y1: int, t: int) -> void:
 	if x < 0 or z < 0 or x >= size.x or z >= size.z:
 		return
 	for y in range(maxi(y0, 0), mini(y1, size.y - 1) + 1):
@@ -104,16 +124,16 @@ func fill_column(x: int, z: int, y0: int, y1: int, t: int) -> void:
 
 # ---------------------------------------------------------------- 数据访问
 
-func in_bounds(p: Vector3i) -> bool:
+func vin(p: Vector3i) -> bool:
 	return p.x >= 0 and p.y >= 0 and p.z >= 0 and p.x < size.x and p.y < size.y and p.z < size.z
 
-func get_block(p: Vector3i) -> int:
-	if not in_bounds(p):
+func vget(p: Vector3i) -> int:
+	if not vin(p):
 		return Blocks.AIR
 	return data[p.x + size.x * (p.y + size.y * p.z)]
 
-func set_block(p: Vector3i, t: int) -> void:
-	if not in_bounds(p):
+func vset(p: Vector3i, t: int) -> void:
+	if not vin(p):
 		return
 	var i := p.x + size.x * (p.y + size.y * p.z)
 	var old := data[i]
@@ -125,33 +145,34 @@ func set_block(p: Vector3i, t: int) -> void:
 	if t == Blocks.AIR:
 		# 上方和斜上方的砂块可能会落/滑进这个空位（连锁坍塌）
 		for d: Vector3i in [Vector3i(0, 1, 0), Vector3i(1, 1, 0), Vector3i(-1, 1, 0), Vector3i(0, 1, 1), Vector3i(0, 1, -1)]:
-			if Blocks.falls[get_block(p + d)] == 1:
+			if Blocks.falls[vget(p + d)] == 1:
 				_falling[p + d] = true
 	elif Blocks.falls[t] == 1:
 		_falling[p] = true
 	block_changed.emit(p, old, t)
+	cell_changed.emit(Vector3i(p.x >> 1, p.y >> 1, p.z >> 1), old, t)
 
 ## 关卡搭建用：批量填充，不发信号
-func fill_box(a: Vector3i, b: Vector3i, t: int) -> void:
+func vfill(a: Vector3i, b: Vector3i, t: int) -> void:
 	var lo := Vector3i(mini(a.x, b.x), mini(a.y, b.y), mini(a.z, b.z))
 	var hi := Vector3i(maxi(a.x, b.x), maxi(a.y, b.y), maxi(a.z, b.z))
 	for z in range(lo.z, hi.z + 1):
 		for y in range(lo.y, hi.y + 1):
 			for x in range(lo.x, hi.x + 1):
 				var p := Vector3i(x, y, z)
-				if in_bounds(p):
+				if vin(p):
 					data[x + size.x * (y + size.y * z)] = t
 					shapes[x + size.x * (y + size.y * z)] = 0
 	_mark_dirty_box(lo, hi)
 
-func get_shape(p: Vector3i) -> int:
-	if not in_bounds(p):
+func vshape(p: Vector3i) -> int:
+	if not vin(p):
 		return 0
 	return shapes[p.x + size.x * (p.y + size.y * p.z)]
 
 ## 关卡搭建用：放一个斜坡方块
-func set_ramp(p: Vector3i, t: int, shape: int) -> void:
-	if not in_bounds(p):
+func vset_ramp(p: Vector3i, t: int, shape: int) -> void:
+	if not vin(p):
 		return
 	var i := p.x + size.x * (p.y + size.y * p.z)
 	data[i] = t
@@ -160,6 +181,125 @@ func set_ramp(p: Vector3i, t: int, shape: int) -> void:
 
 ## 关卡搭建用：沿 dir 方向铺一段坡道。a..b 为坡道占地（含端点，y 取 a.y 为坡底所在层）
 ## gentle = true 时每两格升一格，否则每格升一格。坡道下方自动用 fill 材质垫实
+func vfill_ramp(a: Vector3i, b: Vector3i, dir: int, t: int, gentle := true, fill := -1) -> void:
+	var lo := Vector3i(mini(a.x, b.x), a.y, mini(a.z, b.z))
+	var hi := Vector3i(maxi(a.x, b.x), a.y, maxi(a.z, b.z))
+	var along_x := dir == Ramp.PX or dir == Ramp.NX
+	var n := (hi.x - lo.x + 1) if along_x else (hi.z - lo.z + 1)
+	for z in range(lo.z, hi.z + 1):
+		for x in range(lo.x, hi.x + 1):
+			var k := (x - lo.x) if along_x else (z - lo.z)
+			if dir == Ramp.NX or dir == Ramp.NZ:
+				k = n - 1 - k
+			var step := k / 2 if gentle else k
+			var y := lo.y + step
+			var shape: int
+			if gentle:
+				shape = (1 if k % 2 == 0 else 5) + dir
+			else:
+				shape = 9 + dir
+			vset_ramp(Vector3i(x, y, z), t, shape)
+			var f := t if fill < 0 else fill
+			for yy in range(lo.y, y):
+				vset_ramp(Vector3i(x, yy, z), f, 0)
+
+func to_v(w: Vector3) -> Vector3i:
+	var l := to_local(w) / VOXEL
+	return Vector3i(floori(l.x), floori(l.y), floori(l.z))
+
+func vcenter(p: Vector3i) -> Vector3:
+	return to_global((Vector3(p) + Vector3(0.5, 0.5, 0.5)) * VOXEL)
+
+func vtop(p: Vector3i) -> Vector3:
+	return to_global((Vector3(p) + Vector3(0.5, 1.0, 0.5)) * VOXEL)
+
+# ---------------------------------------------------------------- “格”坐标接口（0.5 米一格，关卡和谜题用）
+
+func in_bounds(c: Vector3i) -> bool:
+	return c.x >= 0 and c.y >= 0 and c.z >= 0 and c.x < csize.x and c.y < csize.y and c.z < csize.z
+
+## 一格里有任何实心体素就返回它的类型（优先返回最上层的，即“这一格表面是什么”），全空返回 AIR
+func get_block(c: Vector3i) -> int:
+	if not in_bounds(c):
+		return Blocks.AIR
+	var b := c * CELL
+	for dy in range(CELL - 1, -1, -1):
+		for dz in CELL:
+			for dx in CELL:
+				var t := data[(b.x + dx) + size.x * ((b.y + dy) + size.y * (b.z + dz))]
+				if t != Blocks.AIR:
+					return t
+	return Blocks.AIR
+
+func set_block(c: Vector3i, t: int) -> void:
+	_cell_shapes.erase(c)
+	var b := c * CELL
+	for dy in CELL:
+		for dz in CELL:
+			for dx in CELL:
+				vset(b + Vector3i(dx, dy, dz), t)
+
+func fill_box(a: Vector3i, b: Vector3i, t: int) -> void:
+	var lo := Vector3i(mini(a.x, b.x), mini(a.y, b.y), mini(a.z, b.z))
+	var hi := Vector3i(maxi(a.x, b.x), maxi(a.y, b.y), maxi(a.z, b.z))
+	vfill(lo * CELL, hi * CELL + Vector3i.ONE * (CELL - 1), t)
+
+func fill_column(x: int, z: int, y0: int, y1: int, t: int) -> void:
+	for dz in CELL:
+		for dx in CELL:
+			vfill_column(x * CELL + dx, z * CELL + dz, y0 * CELL, y1 * CELL + CELL - 1, t)
+
+func get_shape(c: Vector3i) -> int:
+	return int(_cell_shapes.get(c, 0))
+
+## 放一个“格”大小的斜坡：按四角高度切成 2×2×2 个体素斜坡/立方体
+func set_ramp(c: Vector3i, t: int, shape: int) -> void:
+	if shape == 0:
+		fill_box(c, c, t)
+		_cell_shapes.erase(c)
+		return
+	_cell_shapes[c] = shape
+	var hs: Array = SHAPE_HEIGHTS[shape]
+	var b := c * CELL
+	for sy in CELL:
+		for sz in CELL:
+			for sx in CELL:
+				# 这个体素四个顶角处的“格高度”，换算成体素内的高度 0..1
+				var hv: Array[float] = []
+				for corner in [Vector2(sx, sz), Vector2(sx + 1, sz), Vector2(sx + 1, sz + 1), Vector2(sx, sz + 1)]:
+					var u: float = corner.x / CELL
+					var w: float = corner.y / CELL
+					var hc: float = lerpf(lerpf(hs[0], hs[1], u), lerpf(hs[3], hs[2], u), w)
+					hv.append(clampf(hc * CELL - sy, 0.0, 1.0))
+				var p := b + Vector3i(sx, sy, sz)
+				var i := p.x + size.x * (p.y + size.y * p.z)
+				if not vin(p):
+					continue
+				if hv.max() <= 0.001:
+					data[i] = Blocks.AIR
+					shapes[i] = 0
+				elif hv.min() >= 0.999:
+					data[i] = t
+					shapes[i] = 0
+				else:
+					data[i] = t
+					shapes[i] = _match_shape(hv)
+	_mark_dirty_box(b, b + Vector3i.ONE * (CELL - 1))
+
+func _match_shape(hv: Array[float]) -> int:
+	var best := 0
+	var best_e := 1e9
+	for k in SHAPE_HEIGHTS:
+		var h: Array = SHAPE_HEIGHTS[k]
+		var e := 0.0
+		for j in 4:
+			e += absf(h[j] - hv[j])
+		if e < best_e:
+			best_e = e
+			best = k
+	return best
+
+## 沿 dir 方向铺一段坡道（格坐标）。gentle = true 时每两格升一格
 func fill_ramp(a: Vector3i, b: Vector3i, dir: int, t: int, gentle := true, fill := -1) -> void:
 	var lo := Vector3i(mini(a.x, b.x), a.y, mini(a.z, b.z))
 	var hi := Vector3i(maxi(a.x, b.x), a.y, maxi(a.z, b.z))
@@ -183,24 +323,238 @@ func fill_ramp(a: Vector3i, b: Vector3i, dir: int, t: int, gentle := true, fill 
 				set_ramp(Vector3i(x, yy, z), f, 0)
 
 func world_to_voxel(w: Vector3) -> Vector3i:
-	var l := to_local(w) / VOXEL
+	var l := to_local(w) / CELL_M
 	return Vector3i(floori(l.x), floori(l.y), floori(l.z))
 
-func voxel_center(p: Vector3i) -> Vector3:
-	return to_global((Vector3(p) + Vector3(0.5, 0.5, 0.5)) * VOXEL)
+func voxel_center(c: Vector3i) -> Vector3:
+	return to_global((Vector3(c) + Vector3(0.5, 0.5, 0.5)) * CELL_M)
 
-func voxel_top(p: Vector3i) -> Vector3:
-	return to_global((Vector3(p) + Vector3(0.5, 1.0, 0.5)) * VOXEL)
+## 格顶面中心：以这一格实际最高的体素为准（被削掉一半的格子也能放准东西）
+func voxel_top(c: Vector3i) -> Vector3:
+	var top := float(c.y + 1) * CELL_M
+	var b := c * CELL
+	for dy in range(CELL - 1, -1, -1):
+		var any := false
+		for dz in CELL:
+			for dx in CELL:
+				if vget(b + Vector3i(dx, dy, dz)) != Blocks.AIR:
+					any = true
+		if any:
+			top = (b.y + dy + 1) * VOXEL
+			break
+	return to_global(Vector3((c.x + 0.5) * CELL_M, top, (c.z + 0.5) * CELL_M))
+
+func try_break(c: Vector3i, tool: String, power: float, fx := true) -> bool:
+	var any := false
+	var b := c * CELL
+	for dy in CELL:
+		for dz in CELL:
+			for dx in CELL:
+				if vbreak(b + Vector3i(dx, dy, dz), tool, power, fx and not any):
+					any = true
+	return any
+
+func try_break_any(c: Vector3i) -> void:
+	var b := c * CELL
+	for dy in CELL:
+		for dz in CELL:
+			for dx in CELL:
+				vbreak_any(b + Vector3i(dx, dy, dz))
+
+# ---------------------------------------------------------------- 细节：让体素地形更自然
+## 关卡用“格”搭好后，在体素精度上做一遍自然化：
+##   · 草皮只留最上面一层体素，崖边往下垂一点草皮
+##   · 悬崖岩按高度分出几种颜色的岩层（带起伏）
+##   · 露在外面的地形棱角随机崩掉一些（边缘参差），崖壁上随机凹坑
+## protect：不处理的区域（格坐标 AABB 列表，谜题关键位置）
+func naturalize(y_max_cell: int, protect: Array = [], seed_v := 7) -> void:
+	var t0 := Time.get_ticks_msec()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_v
+	noise.frequency = 0.05
+	var ymax := mini(size.y - 1, (y_max_cell + 1) * CELL)
+	var sx := size.x
+	var sxy := size.x * size.y
+	# 1) 每一列的最高实心体素
+	var tops := PackedInt32Array()
+	tops.resize(size.x * size.z)
+	for z in size.z:
+		for x in size.x:
+			var top := -1
+			var i := x + sxy * z
+			for y in range(ymax, -1, -1):
+				if data[i + sx * y] != Blocks.AIR:
+					top = y
+					break
+			tops[x + size.x * z] = top
+	var natural := {Blocks.GRASS: true, Blocks.DIRT: true, Blocks.CLIFF: true, Blocks.MOSS: true, Blocks.CLIFF_B: true, Blocks.CLIFF_C: true}
+	var removes: Array[Vector3i] = []
+	var sets: Array = []
+	for z in size.z:
+		for x in size.x:
+			var top := tops[x + size.x * z]
+			if top < 1:
+				continue
+			var cell := Vector3i(x >> 1, top >> 1, z >> 1)
+			var skip := false
+			for box in protect:
+				if (box as AABB).has_point(Vector3(cell) + Vector3.ONE * 0.5):
+					skip = true
+					break
+			if skip:
+				continue
+			var ti := x + sx * top + sxy * z
+			var tt := data[ti]
+			if shapes[ti] != 0:
+				continue
+			# 邻居列最低的顶
+			var nmin := top
+			var open_sides := 0
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var nx: int = x + d.x
+				var nz: int = z + d.y
+				var nt := -1 if nx < 0 or nz < 0 or nx >= size.x or nz >= size.z else tops[nx + size.x * nz]
+				nmin = mini(nmin, nt)
+				if nt < top:
+					open_sides += 1
+			# 草皮只留一层
+			if tt == Blocks.GRASS and top >= 1 and data[ti - sx] == Blocks.GRASS:
+				data[ti - sx] = Blocks.DIRT
+			# 崖壁：岩层 + 凹坑 + 垂下的草皮
+			var hang_len := int(clampf((noise.get_noise_2d(x * 1.6, z * 1.6) + 0.25) * 4.0, 0.0, 3.0))
+			for y in range(maxi(nmin + 1, 0), top):
+				var i := x + sx * y + sxy * z
+				var t := data[i]
+				if t == Blocks.CLIFF or t == Blocks.CLIFF_B or t == Blocks.CLIFF_C:
+					var band := y * 0.5 + noise.get_noise_2d(x * 0.7, z * 0.7) * 3.0
+					var k := posmod(int(floor(band / 3.0)), 5)
+					data[i] = [Blocks.CLIFF, Blocks.CLIFF_B, Blocks.CLIFF, Blocks.CLIFF_C, Blocks.CLIFF_B][k]
+					# 成片的风化凹坑（噪声决定位置，比随机单点自然）
+					if y < top - 2 and noise.get_noise_3d(x * 2.2, y * 2.2, z * 2.2) > 0.42:
+						removes.append(Vector3i(x, y, z))
+				if tt == Blocks.GRASS and y >= top - hang_len and (t == Blocks.DIRT or t == Blocks.CLIFF):
+					data[i] = Blocks.GRASS
+			# 露在外面的棱角崩掉一些（角上更容易崩）
+			if natural.has(tt) and open_sides > 0 and top - nmin >= 2:
+				var p := 0.22 if open_sides == 1 else 0.55
+				if rng.randf() < p:
+					removes.append(Vector3i(x, top, z))
+					if open_sides >= 2 and rng.randf() < 0.35:
+						removes.append(Vector3i(x, top - 1, z))
+	for p in removes:
+		var i := p.x + sx * p.y + sxy * p.z
+		data[i] = Blocks.AIR
+		shapes[i] = 0
+	# 被崩掉顶的草地，下面露出来的土重新长草
+	for p in removes:
+		var below := p + Vector3i.DOWN
+		if vget(below) == Blocks.DIRT and vget(p) == Blocks.AIR and rng.randf() < 0.7:
+			data[below.x + sx * below.y + sxy * below.z] = Blocks.GRASS
+	_mark_dirty_box(Vector3i.ZERO, size - Vector3i.ONE)
+	print("[VoxelWorld] 自然化 %d ms（崩掉 %d 个体素）" % [Time.get_ticks_msec() - t0, removes.size()])
+
+# ---------------------------------------------------------------- 体素树
+## 在体素 root（树根所在的空气体素）长一棵树。只填空气，不会覆盖地形。
+## kind: "round" 圆冠阔叶树 / "pine" 分层松树 / "blossom" 开花的树
+func put_tree(root: Vector3i, trunk_h: int, crown_r: float, kind: String, rng: RandomNumberGenerator) -> void:
+	var lo := root
+	var hi := root
+	var lean := Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * 0.12
+	# 树干：2×2 体素，微微倾斜，根部多一圈
+	var top := root
+	for y in trunk_h:
+		var off := Vector2i(roundi(lean.x * y), roundi(lean.y * y))
+		for dz in 2:
+			for dx in 2:
+				var p := root + Vector3i(off.x + dx, y, off.y + dz)
+				_put(p, Blocks.WOOD)
+		top = root + Vector3i(off.x, y, off.y)
+	for d in [Vector3i(-1, 0, 0), Vector3i(2, 0, 1), Vector3i(0, 0, -1), Vector3i(1, 0, 2)]:
+		if rng.randf() < 0.7:
+			_put(root + d, Blocks.WOOD)
+	var leaf := Blocks.LEAVES
+	if kind == "pine":
+		leaf = Blocks.PINE
+	elif kind == "blossom":
+		leaf = Blocks.BLOSSOM
+	var noise := FastNoiseLite.new()
+	noise.seed = rng.randi()
+	noise.frequency = 0.35
+	var r := crown_r / VOXEL
+	var c := Vector3(top) + Vector3(1.0, 0.0, 1.0)
+	if kind == "pine":
+		# 分层的圆锥：每层是一个扁圆盘，越往上越小
+		var tiers := 4
+		var y0 := int(trunk_h * 0.35)
+		var total := trunk_h - y0 + int(r * 1.2)
+		for yi in total:
+			var f := float(yi) / total
+			var tier_f := fmod(f * tiers, 1.0)
+			var rad := r * (1.0 - f * 0.85) * (0.75 + 0.35 * (1.0 - tier_f))
+			var yy := root.y + y0 + yi
+			var ir := int(ceil(rad)) + 1
+			for dz in range(-ir, ir + 1):
+				for dx in range(-ir, ir + 1):
+					var d := Vector2(dx + 0.5 - 1.0, dz + 0.5 - 1.0).length()
+					if d <= rad + noise.get_noise_3d(dx, yy, dz) * 0.9:
+						_put(Vector3i(int(c.x) + dx, yy, int(c.z) + dz), leaf)
+		lo = root - Vector3i(ir_of(r), 0, ir_of(r))
+		hi = root + Vector3i(ir_of(r), trunk_h + int(r * 1.3) + 2, ir_of(r))
+	else:
+		# 几个互相重叠的球组成树冠，表面用噪声抖一下，底部削平
+		var blobs := [[c + Vector3(0, r * 0.35, 0), r]]
+		for k in 3:
+			var a := rng.randf() * TAU
+			blobs.append([c + Vector3(cos(a) * r * 0.55, r * rng.randf_range(0.0, 0.5), sin(a) * r * 0.55), r * rng.randf_range(0.55, 0.75)])
+		var ir := int(ceil(r * 1.4)) + 1
+		for dz in range(-ir, ir + 1):
+			for dy in range(-int(r * 0.6), ir + 1):
+				for dx in range(-ir, ir + 1):
+					var p := Vector3(c.x + dx, c.y + dy, c.z + dz)
+					var inside := false
+					for b in blobs:
+						var bc: Vector3 = b[0]
+						var br: float = b[1]
+						if (p - bc).length() <= br + noise.get_noise_3dv(p) * 1.1:
+							inside = true
+							break
+					if inside and p.y > c.y - r * 0.45:
+						_put(Vector3i(p.floor()), leaf)
+		lo = Vector3i(c.floor()) - Vector3i(ir, int(r) + trunk_h, ir)
+		hi = Vector3i(c.floor()) + Vector3i(ir, ir + 1, ir)
+	_mark_dirty_box(lo - Vector3i.ONE * 2, hi + Vector3i.ONE * 2)
+
+func ir_of(r: float) -> int:
+	return int(ceil(r)) + 3
+
+func _put(p: Vector3i, t: int) -> void:
+	if not vin(p):
+		return
+	var i := p.x + size.x * (p.y + size.y * p.z)
+	if data[i] == Blocks.AIR:
+		data[i] = t
+		shapes[i] = 0
+
+## 立刻重建所有脏区块（关卡搭建完后用）
+func flush_dirty() -> void:
+	for c in _dirty.keys():
+		_build_chunk(c)
+	_dirty.clear()
+	_commit_groups()
 
 # ---------------------------------------------------------------- 破坏
 
 ## tool: "impact"（撞击，power = 速度）或 "drill"（钻头）
-func try_break(p: Vector3i, tool: String, power: float, fx := true) -> bool:
-	var t := get_block(p)
+func vbreak(p: Vector3i, tool: String, power: float, fx := true) -> bool:
+	var t := vget(p)
 	if not Blocks.can_break(t, tool, power):
 		return false
-	set_block(p, Blocks.AIR)
-	GameState.blocks_broken += 1
+	vset(p, Blocks.AIR)
+	if _first_hit(p):
+		GameState.blocks_broken += 1
+		_drops(p, t)
 	if fx:
 		_spawn_break_fx(p, t)
 	block_broken.emit(p, t)
@@ -213,20 +567,22 @@ func _chain_from(p: Vector3i, t: int) -> void:
 	get_tree().create_timer(0.06).timeout.connect(func() -> void:
 		for d in DIRS:
 			var q: Vector3i = p + d
-			if get_block(q) == t:
-				set_block(q, Blocks.AIR)
+			if vget(q) == t:
+				vset(q, Blocks.AIR)
 				_spawn_break_fx(q, t)
+				if _first_hit(q):
+					_drops(q, t)
 				block_broken.emit(q, t)
 				_chain_from(q, t)
 		GameState.shake.emit(0.12))
 
 ## 机关用：无视硬度移除方块（有碎屑特效，不给掉落）
-func try_break_any(p: Vector3i) -> void:
-	var t := get_block(p)
+func vbreak_any(p: Vector3i) -> void:
+	var t := vget(p)
 	if t == Blocks.AIR:
 		return
-	set_block(p, Blocks.AIR)
-	_spawn_debris(voxel_center(p), Blocks.colors[t])
+	vset(p, Blocks.AIR)
+	_spawn_debris(vcenter(p), Blocks.colors[t])
 
 ## 以世界坐标为球心破坏一片方块，返回破坏数量。
 ## 为了更像真实的破坏，形状带随机性：
@@ -235,7 +591,7 @@ func try_break_any(p: Vector3i) -> void:
 ##   · 坑外一圈的方块有一定概率被震裂
 ##   · 破坏后和大地断开的小碎块会整块掉落、翻滚、落地再碎
 func break_sphere(center: Vector3, radius: float, tool: String, power: float, dir := Vector3.ZERO) -> int:
-	var c := world_to_voxel(center)
+	var c := to_v(center)
 	var r := int(ceil(radius * 1.35 / VOXEL))
 	var count := 0
 	var broken: Array[Vector3i] = []
@@ -244,16 +600,16 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 		for y in range(c.y - r, c.y + r + 1):
 			for x in range(c.x - r, c.x + r + 1):
 				var p := Vector3i(x, y, z)
-				if get_block(p) == Blocks.AIR:
+				if vget(p) == Blocks.AIR:
 					continue
-				var off := voxel_center(p) - center
+				var off := vcenter(p) - center
 				# 沿撞击方向压扁距离 → 坑沿着冲击方向更深
 				var along := off.dot(d)
 				var dist := (off - d * along).length() + absf(along) * (0.7 if along > 0.0 else 1.0)
 				var jitter := _rng.randf_range(0.95, 1.22)   # 只往外抖：坑不会比原来小，边缘更参差
 				var inside := dist <= radius * jitter
 				var fringe := not inside and dist <= radius * 1.35 and _rng.randf() < 0.28
-				if (inside or fringe) and try_break(p, tool, power, count < 16):
+				if (inside or fringe) and vbreak(p, tool, power, (count % 5) == 0):
 					count += 1
 					broken.append(p)
 	if count > 0:
@@ -263,7 +619,7 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 
 var _rng := RandomNumberGenerator.new()
 
-const DETACH_LIMIT := 48
+const DETACH_LIMIT := 360
 
 ## 检查被破坏位置周围：和大地失去连接、又足够小的一团方块会变成掉落的碎块。
 ## 连到打不坏的方块（合金、金属……）、或者一团超过 DETACH_LIMIT 格，都算“有支撑”。
@@ -272,7 +628,7 @@ func detach_floating(around: Array[Vector3i]) -> void:
 	for p in around:
 		for dd in DIRS:
 			var q: Vector3i = p + dd
-			if checked.has(q) or not _detachable(get_block(q)):
+			if checked.has(q) or not _detachable(vget(q)):
 				continue
 			var comp := _component(q, checked)
 			if comp.is_empty():
@@ -290,7 +646,7 @@ func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
 	var supported := false
 	while not queue.is_empty():
 		var q: Vector3i = queue.pop_back()
-		var t := get_block(q)
+		var t := vget(q)
 		if t == Blocks.AIR:
 			continue
 		if not _detachable(t):
@@ -302,7 +658,7 @@ func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
 			break
 		for dd in DIRS:
 			var n: Vector3i = q + dd
-			if not seen.has(n) and get_block(n) != Blocks.AIR:
+			if not seen.has(n) and vget(n) != Blocks.AIR:
 				seen[n] = true
 				queue.append(n)
 	for q in out:
@@ -314,14 +670,15 @@ func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
 func _spawn_chunk(cells: Array[Vector3i]) -> void:
 	var sum := Vector3.ZERO
 	for q in cells:
-		sum += voxel_center(q)
+		sum += vcenter(q)
 	var mid := sum / cells.size()
 	var list := []
 	for q in cells:
-		list.append([voxel_center(q) - mid, get_block(q)])
+		list.append([vcenter(q) - mid, vget(q)])
 	for q in cells:
-		set_block(q, Blocks.AIR)
-		GameState.blocks_broken += 1
+		vset(q, Blocks.AIR)
+		if _first_hit(q):
+			GameState.blocks_broken += 1
 	var ch := VoxelChunk.new()
 	ch.world = self
 	ch.blocks = list
@@ -346,9 +703,20 @@ func break_fx_at(pos: Vector3, t: int, drops: bool) -> void:
 		item_dropped.emit(item, pos)
 
 func _spawn_break_fx(p: Vector3i, t: int) -> void:
-	var pos := voxel_center(p)
+	var pos := vcenter(p)
 	_spawn_debris(pos, Blocks.colors[t])
 	Sfx.break_sound(t, pos)
+
+## 一格（2×2×2 体素）里第一次有体素被破坏时返回 true
+func _first_hit(p: Vector3i) -> bool:
+	var c := Vector3i(p.x >> 1, p.y >> 1, p.z >> 1)
+	if _cell_hit.has(c):
+		return false
+	_cell_hit[c] = true
+	return true
+
+func _drops(p: Vector3i, t: int) -> void:
+	var pos := vcenter(p)
 	var d := Blocks.def(t)
 	for i in int(d.get("coins", 0)):
 		PickupScript.spawn(self, "coin", pos)
@@ -365,7 +733,7 @@ var _debris_cols := PackedColorArray()
 static var _debris_mesh: BoxMesh
 
 func _spawn_debris(pos: Vector3, color: Color) -> void:
-	if _debris_pts.size() < 48:
+	if _debris_pts.size() < 40:
 		_debris_pts.append(to_local(pos))
 		_debris_cols.append(color)
 
@@ -374,7 +742,7 @@ func _flush_debris() -> void:
 		return
 	if _debris_mesh == null:
 		_debris_mesh = BoxMesh.new()
-		_debris_mesh.size = Vector3.ONE * 0.14
+		_debris_mesh.size = Vector3.ONE * 0.09
 		var mat := StandardMaterial3D.new()
 		mat.vertex_color_use_as_albedo = true
 		mat.roughness = 0.8
@@ -432,7 +800,7 @@ func _rebuild_dirty() -> void:
 	var keys := _dirty.keys()
 	var pl := GameState.player as Node3D
 	if pl and keys.size() > 1:
-		var pc := world_to_voxel(pl.global_position) / CHUNK
+		var pc := to_v(pl.global_position) / CHUNK
 		keys.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return (a - pc).length_squared() < (b - pc).length_squared())
 	var t0 := Time.get_ticks_usec()
 	for i in keys.size():
@@ -442,18 +810,19 @@ func _rebuild_dirty() -> void:
 		# 至少重建两个（通常就是主角撞到的地方），再看时间预算
 		if i >= 1 and (Time.get_ticks_usec() - t0) > REBUILD_BUDGET_MS * 1000.0:
 			break
+	_commit_groups()
 
 func _step_falling() -> void:
 	var current := _falling.keys()
 	_falling.clear()
 	for p in current:
-		var t := get_block(p)
+		var t := vget(p)
 		if Blocks.falls[t] == 0:
 			continue
 		var below: Vector3i = p + Vector3i.DOWN
-		if in_bounds(below) and get_block(below) == Blocks.AIR:
-			set_block(p, Blocks.AIR)      # 会把上方的砂加入下落队列
-			set_block(below, t)           # 会把自己加入下一轮
+		if vin(below) and vget(below) == Blocks.AIR:
+			vset(p, Blocks.AIR)      # 会把上方的砂加入下落队列
+			vset(below, t)           # 会把自己加入下一轮
 			continue
 		# 下方被挡住：像真实砂堆一样往斜下方滑（形成约 45° 的休止角）
 		var dirs: Array[Vector3i] = [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
@@ -461,9 +830,9 @@ func _step_falling() -> void:
 		for d in dirs:
 			var side: Vector3i = p + d
 			var dest: Vector3i = side + Vector3i.DOWN
-			if in_bounds(dest) and get_block(side) == Blocks.AIR and get_block(dest) == Blocks.AIR:
-				set_block(p, Blocks.AIR)
-				set_block(dest, t)
+			if vin(dest) and vget(side) == Blocks.AIR and vget(dest) == Blocks.AIR:
+				vset(p, Blocks.AIR)
+				vset(dest, t)
 				break
 
 func rebuild_all() -> void:
@@ -473,6 +842,7 @@ func rebuild_all() -> void:
 			for cx in ceili(size.x / float(CHUNK)):
 				_build_chunk(Vector3i(cx, cy, cz))
 	_dirty.clear()
+	_commit_groups()
 	print("[VoxelWorld] 全部区块生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
 
 func _mark_dirty_around(p: Vector3i) -> void:
@@ -520,7 +890,7 @@ func _mesh_shape(p: Vector3i, t: int, sh: int, vv: Array, nn: Array, cc: Array, 
 		top_n = -top_n
 	_shape_quad(ctx, t00, t10, t11, t01, top_n, 0.72 + 0.28 * top_n.normalized().y)
 	# 底面
-	if not _is_occluder(get_block(p + Vector3i.DOWN)):
+	if not _is_occluder(vget(p + Vector3i.DOWN)):
 		_shape_quad(ctx, b00, b10, b11, b01, Vector3.DOWN, 0.55)
 	# 四个侧面：底边两点、顶边两点、朝向、邻居方向、亮度
 	var sides := [
@@ -531,7 +901,7 @@ func _mesh_shape(p: Vector3i, t: int, sh: int, vv: Array, nn: Array, cc: Array, 
 	]
 	for sd in sides:
 		var nb: Vector3i = p + sd[5]
-		if _is_occluder(get_block(nb)) and get_shape(nb) == 0:
+		if _is_occluder(vget(nb)) and vshape(nb) == 0:
 			continue
 		var s0: Vector3 = sd[0]
 		var s1: Vector3 = sd[1]
@@ -582,6 +952,17 @@ func _category(t: int) -> int:
 		return 2
 	return 0
 
+func _chunk_all_air(origin: Vector3i) -> bool:
+	var x0 := maxi(origin.x - 1, 0)
+	var x1 := mini(origin.x + CHUNK + 1, size.x)
+	for z in range(maxi(origin.z - 1, 0), mini(origin.z + CHUNK + 1, size.z)):
+		for y in range(maxi(origin.y - 1, 0), mini(origin.y + CHUNK + 1, size.y)):
+			var row := size.x * (y + size.y * z)
+			var sl := data.slice(row + x0, row + x1)
+			if sl.count(0) != sl.size():
+				return false
+	return true
+
 # 网格生成用的缓冲（成员变量，避免 Packed 数组放进 Array 后无法原地追加）
 var _bv: Array = []
 var _occ := PackedByteArray()
@@ -600,6 +981,11 @@ func _build_chunk(c: Vector3i) -> void:
 	# 1) 把区块连同一圈邻居拷进带边框的小数组，之后查邻居不用再做边界判断
 	const P := CHUNK + 2
 	const PP := P * P
+	# 整个小区块连同邻居都是空气就不用生成（大部分天空区块）
+	if _chunk_all_air(origin):
+		_sub.erase(c)
+		_gdirty[Vector3i(c.x >> 1, c.y >> 1, c.z >> 1)] = true
+		return
 	var pb := PackedByteArray()
 	pb.resize(P * PP)
 	var psh := PackedByteArray()
@@ -718,12 +1104,44 @@ func _build_chunk(c: Vector3i) -> void:
 							v2.append(q[k]); n2.append(nf); c2.append(col); u2.append(CUV[k]); w2.append(tuv2); glass_faces.append(q[k])
 						else:
 							v3.append(q[k]); n3.append(nf); c3.append(col); u3.append(CUV[k]); w3.append(tuv2); faces.append(q[k])
-	_bv = [null, [v1, n1, c1, u1, w1], [v2, n2, c2, u2, w2], [v3, n3, c3, u3, w3]]
+	var g := Vector3i(c.x >> 1, c.y >> 1, c.z >> 1)
+	_gdirty[g] = true
+	if v1.is_empty() and v2.is_empty() and v3.is_empty():
+		_sub.erase(c)
+		return
+	_sub[c] = [[null, [v1, n1, c1, u1, w1], [v2, n2, c2, u2, w2], [v3, n3, c3, u3, w3]], faces, glass_faces]
 
-	var node: Dictionary = _chunks.get(c, {})
+## 把一个渲染组（GROUP³ 个小区块）的网格和碰撞拼起来
+func _commit_group(g: Vector3i) -> void:
+	var sets := [null, [PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array(), PackedVector2Array()],
+		[PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array(), PackedVector2Array()],
+		[PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array(), PackedVector2Array()]]
+	var faces := PackedVector3Array()
+	var glass_faces := PackedVector3Array()
+	for dz in GROUP:
+		for dy in GROUP:
+			for dx in GROUP:
+				var sc: Vector3i = g * GROUP + Vector3i(dx, dy, dz)
+				if not _sub.has(sc):
+					continue
+				var sub: Array = _sub[sc]
+				for rm in [1, 2, 3]:
+					var src: Array = sub[0][rm]
+					var dst: Array = sets[rm]
+					for k in 5:
+						dst[k].append_array(src[k])
+				faces.append_array(sub[1])
+				glass_faces.append_array(sub[2])
+	var node: Dictionary = _chunks.get(g, {})
+	var empty := faces.is_empty() and glass_faces.is_empty() and (sets[1][0] as PackedVector3Array).is_empty() and (sets[2][0] as PackedVector3Array).is_empty() and (sets[3][0] as PackedVector3Array).is_empty()
+	if empty:
+		if not node.is_empty():
+			(node["mesh"] as Node).queue_free()
+			_chunks.erase(g)
+		return
 	if node.is_empty():
 		var mi := MeshInstance3D.new()
-		mi.name = "Chunk_%d_%d_%d" % [c.x, c.y, c.z]
+		mi.name = "Chunk_%d_%d_%d" % [g.x, g.y, g.z]
 		add_child(mi)
 		var body := StaticBody3D.new()
 		body.collision_layer = 1
@@ -741,11 +1159,11 @@ func _build_chunk(c: Vector3i) -> void:
 		var gcs := CollisionShape3D.new()
 		gbody.add_child(gcs)
 		node = {"mesh": mi, "body": body, "shape": cs, "gshape": gcs}
-		_chunks[c] = node
+		_chunks[g] = node
 
 	var mesh := ArrayMesh.new()
 	for rm in [Blocks.Render.OPAQUE, Blocks.Render.GLASS, Blocks.Render.GLOW]:
-		var set: Array = _bv[rm]
+		var set: Array = sets[rm]
 		if (set[0] as PackedVector3Array).is_empty():
 			continue
 		var arr := []
@@ -773,3 +1191,8 @@ func _build_chunk(c: Vector3i) -> void:
 		var gs := ConcavePolygonShape3D.new()
 		gs.set_faces(glass_faces)
 		gshape.shape = gs
+
+func _commit_groups() -> void:
+	for g in _gdirty.keys():
+		_commit_group(g)
+	_gdirty.clear()

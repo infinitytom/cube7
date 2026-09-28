@@ -35,6 +35,8 @@ func _physics_process(delta: float) -> void:
 			if b.has_method("launched"):
 				b.launched(0.6)
 			b.linear_velocity = Vector3(b.linear_velocity.x * 0.3, 0, b.linear_velocity.z * 0.3) + launch
+			if b is MorphBall:
+				(b as MorphBall)._jumped_now = true
 			_cool = 0.4
 			GameState.shake.emit(0.1)
 			Sfx.play("boing", global_position, -3.0)

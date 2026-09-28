@@ -116,11 +116,11 @@ func _build_terrain() -> void:
 ## 用体素包围盒（含两端）放置一个区域
 func _zone(script: GDScript, a: Vector3i, b: Vector3i, props := {}) -> Node:
 	var z: Node3D = script.new()
-	z.set("box_size", Vector3(b - a + Vector3i.ONE) * VoxelWorld.VOXEL)
+	z.set("box_size", Vector3(b - a + Vector3i.ONE) * VoxelWorld.CELL_M)
 	for k in props:
 		z.set(k, props[k])
 	add_child(z)
-	z.global_position = world.to_global(Vector3(a + b + Vector3i.ONE) * VoxelWorld.VOXEL * 0.5)
+	z.global_position = world.to_global(Vector3(a + b + Vector3i.ONE) * VoxelWorld.CELL_M * 0.5)
 	return z
 
 func _talk(a: Vector3i, b: Vector3i, lines: Array) -> void:

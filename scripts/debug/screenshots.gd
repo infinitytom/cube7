@@ -38,8 +38,8 @@ func aerial(name: String, from: Vector3, to: Vector3, wait := 1.0) -> void:
 	var c := Camera3D.new()
 	c.fov = 60.0
 	add_child(c)
-	c.global_position = from * VoxelWorld.VOXEL
-	c.look_at(to * VoxelWorld.VOXEL)
+	c.global_position = from * VoxelWorld.CELL_M
+	c.look_at(to * VoxelWorld.CELL_M)
 	c.current = true
 	await get_tree().create_timer(wait).timeout
 	await _save(name)
@@ -61,7 +61,7 @@ func _run() -> void:
 			P.debug_override = true
 			P.teleport(W.voxel_top(Vector3i(36, G - 1, 76)) + Vector3.UP * 0.5)
 			await get_tree().create_timer(1.8).timeout
-			var pv := P.global_position / VoxelWorld.VOXEL
+			var pv := P.global_position / VoxelWorld.CELL_M
 			await aerial("q03_pix_%d" % fi, pv + Vector3(-3.5, 1.6, 3.0), pv + Vector3(0, 0.3, 0), 0.4)
 		# 钻头工作中：朝泥土墙钻
 		P.apply_form(MorphBall.DRILL, false)
@@ -70,7 +70,7 @@ func _run() -> void:
 		P.debug_input = Vector2(0, -1)
 		P.debug_ability = true
 		await get_tree().create_timer(0.9).timeout
-		var dv := P.global_position / VoxelWorld.VOXEL
+		var dv := P.global_position / VoxelWorld.CELL_M
 		await aerial("q04_drilling", dv + Vector3(-2.5, 2.5, 5.0), dv, 0.2)
 		P.debug_ability = false
 		P.debug_input = Vector2.ZERO

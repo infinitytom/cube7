@@ -17,7 +17,7 @@ func setup(w: VoxelWorld, src: Vector3i, rcv: Vector3i, doors: Array[Vector3i]) 
 	source = src
 	receiver = rcv
 	door_blocks = doors
-	world.block_changed.connect(_on_changed)
+	world.cell_changed.connect(_on_changed)
 
 func _on_changed(_p: Vector3i, _o: int, _n: int) -> void:
 	if not opened and not _queued:

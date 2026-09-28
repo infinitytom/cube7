@@ -139,7 +139,7 @@ func _run() -> void:
 		# 从砂塔原来的位置（水管在这里断开）滚过去；像玩家一样边滚边修正方向
 		var row := clampi(best_row, 63, 69)
 		await tp(Vector3i(46, G, row), Vector3(4, 0, 0))
-		var zc := (float(row) + 0.5) * VoxelWorld.VOXEL
+		var zc := (float(row) + 0.5) * VoxelWorld.CELL_M
 		P.debug_boost = true
 		for k in 240:
 			await get_tree().physics_frame

@@ -69,16 +69,21 @@ void face_axes(vec3 n, out vec3 u, out vec3 v) {
 vec3 voxel_albedo(vec3 base, float light, vec2 uv) {
 	vec3 col = base;
 	float cat = voxel_category();
-	// 草方块侧面：下部是泥土，上沿一圈不规则的草边
-	if (abs(v_type - 2.0) < 0.5 && abs(v_wnorm.y) < 0.5) {
-		float h = fract(v_wpos.y * 2.0 + 0.0001);
-		float lip = 0.6 + 0.2 * vnoise(v_wpos * 3.0);
-		col = h > lip ? base : dirt_color;
-	}
 	// 大尺度的柔和色彩起伏（不按格子走，所以平地看不出方格）
 	float n1 = vnoise(v_wpos * 0.35);
 	float n2 = vnoise(v_wpos * 1.3);
-	col *= 0.93 + 0.1 * n1 + 0.04 * n2;
+	float n3 = vnoise(v_wpos * 5.0);
+	col *= 0.9 + 0.14 * n1 + 0.06 * n2;
+	// 草：顶面带黄绿的斑驳；侧面（垂下的草皮）更深一点
+	if (abs(v_type - 2.0) < 0.5) {
+		col = mix(col, col * vec3(1.18, 1.12, 0.72), smoothstep(0.55, 0.8, vnoise(v_wpos * 0.6 + 3.1)) * 0.6);
+		if (abs(v_wnorm.y) < 0.5) col *= 0.82;
+	}
+	// 天然岩石/泥土：细碎的颗粒和横向纹理
+	if (v_type > 2.5 && v_type < 3.5 || v_type > 24.5 && v_type < 25.5 || v_type > 31.5 && v_type < 33.5) {
+		col *= 0.94 + 0.1 * n3;
+		if (abs(v_wnorm.y) < 0.5) col *= 0.96 + 0.06 * sin(v_wpos.y * 26.0 + n2 * 4.0);
+	}
 	// 圆角积木：只有露出来的边才压暗
 	float e = exposed_edge_dist(uv);
 	float b = smoothstep(0.0, bevel_width, e);
@@ -91,12 +96,28 @@ vec3 voxel_albedo(vec3 base, float light, vec2 uv) {
 	//   松软（砂、松土）：细碎的颗粒点
 	//   打不坏：更暗一点、边缘更硬朗
 	float ei = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-	if (cat > 0.5 && cat < 1.5) {
-		float frame = smoothstep(0.1, 0.12, ei) * (1.0 - smoothstep(0.16, 0.18, ei));
-		col = mix(col, vec3(1.0, 0.97, 0.9), frame * 0.55);
-		vec2 cd = abs(uv - 0.5);
-		float stud = 1.0 - smoothstep(0.045, 0.06, length(cd - vec2(0.3)));
-		col = mix(col, vec3(1.0, 0.95, 0.85), stud * 0.6);
+	bool foliage = abs(v_type - 22.0) < 0.5 || v_type > 33.5 && v_type < 35.5;
+	if (foliage) {
+		// 树叶：一簇一簇的明暗，不画箱板
+		col *= 0.82 + 0.3 * vnoise(v_wpos * 3.3) + 0.08 * n3;
+		col = mix(col, col * vec3(1.15, 1.2, 0.8), smoothstep(0.3, 0.9, v_wnorm.y) * 0.35);
+	} else if (cat > 0.5 && cat < 1.5) {
+		// 可撞碎：按 0.5 米的格在世界空间画“箱板”——四周一圈亮边框 + 中间木纹横条，一看就是箱子/可拆的构件
+		vec3 fu;
+		vec3 fv;
+		face_axes(v_wnorm, fu, fv);
+		vec2 cuv = vec2(fract(dot(v_wpos, fu) * 2.0 + 0.0001), fract(dot(v_wpos, fv) * 2.0 + 0.0001));
+		float ce = min(min(cuv.x, 1.0 - cuv.x), min(cuv.y, 1.0 - cuv.y));
+		float frame = 1.0 - smoothstep(0.07, 0.09, ce);
+		bool is_glass = abs(v_type - 5.0) < 0.5;
+		if (!is_glass) {
+			col *= 0.93 + 0.07 * step(0.5, fract(cuv.y * 3.0));
+			col = mix(col, col * 1.35 + vec3(0.04), frame * 0.7);
+			float bolt = 1.0 - smoothstep(0.025, 0.04, length(abs(cuv - 0.5) - vec2(0.39)));
+			col = mix(col, vec3(0.82, 0.84, 0.88), bolt);
+		} else {
+			col = mix(col, vec3(1.0), frame * 0.35);
+		}
 	} else if (cat > 2.5) {
 		float g = step(0.82, hash13(floor(v_wpos * 16.0 + v_wnorm * 0.1)));
 		col *= 1.0 - 0.12 * g;

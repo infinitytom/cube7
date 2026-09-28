@@ -78,10 +78,18 @@ func build() -> void:
 	_mud_wall_and_cave()
 	_pylon_and_bridge()
 	_fences()
+	# 体素精度上的自然化（崩边、岩层、垂草）；谜题关键处不动
+	world.naturalize(G + 14, [
+		AABB(Vector3(20, 0, 69), Vector3(9, 44, 9)),          # 出坑坡道和木箱
+		AABB(Vector3(44, 0, 56), Vector3(30, 44, 30)),        # 砂塔、深沟、坡道
+		AABB(Vector3(DOME_C.x - DOME_R - 2, 0, DOME_C.z - DOME_R - 2), Vector3(DOME_R * 2 + 5, 44, DOME_R * 2 + 5)),
+		AABB(Vector3(94, 0, 22), Vector3(16, 44, 30)),        # 插槽和光桥
+	])
 	world.rebuild_all()
 	scatter_decor(Vector3i(0, G - 3, 0), Vector3i(SIZE.x - 1, G + 12, SIZE.z - 1), 0.28, 0.07, 0.03)
 	decor.commit()
 	_dress()
+	world.flush_dirty()
 	if backdrop:
 		return
 	_logic()
@@ -111,14 +119,14 @@ func _dress() -> void:
 	# 成片的树林（边缘和角落），让岛看起来是“长满了”的
 	for c in [Vector2i(30, 61), Vector2i(48, 85), Vector2i(35, 86), Vector2i(70, 80), Vector2i(80, 70),
 			Vector2i(58, 38), Vector2i(86, 62), Vector2i(8, 60), Vector2i(20, 88), Vector2i(76, 36), Vector2i(110, 50)]:
-		for k in 4:
+		for k in 2:
 			var cell := find_flat(c.x + rng.randi_range(-3, 3), c.y + rng.randi_range(-3, 3), 3, 1)
 			if cell.y >= 0 and world.get_block(cell) == Blocks.AIR:
-				prop(Kit.TREES[rng.randi() % Kit.TREES.size()], cell, rng.randf_range(2.2, 3.8), true, 2, "trunk")
+				tree(cell, rng.randi_range(4, 7), rng.randf_range(1.6, 2.4))
 	# 花丛边的蝴蝶
 	var amb := Ambient.new()
-	amb.area_lo = Vector3(20, G + 1, 58) * VoxelWorld.VOXEL
-	amb.area_hi = Vector3(110, G + 10, 88) * VoxelWorld.VOXEL
+	amb.area_lo = Vector3(20, G + 1, 58) * VoxelWorld.CELL_M
+	amb.area_hi = Vector3(110, G + 10, 88) * VoxelWorld.CELL_M
 	amb.count = 22
 	add_child(amb)
 
@@ -314,7 +322,10 @@ func _sand_pit() -> void:
 		var z1: int = zs.max() + 1
 		for z in range(z0, z1 + 1):
 			if z < 62 or z > 70:
-				world.fill_box(Vector3i(56, G + 2, z), Vector3i(57, G + 3, z), Blocks.METAL)
+				world.fill_box(Vector3i(56, G + 2, z), Vector3i(57, G + 4, z), Blocks.METAL)
+				# 管子下沿再加一层体素（离地 0.75 米）：主角变小后也跳不过去
+				var C := VoxelWorld.CELL
+				world.vfill(Vector3i(56 * C, (G + 2) * C - 1, z * C), Vector3i(57 * C + 1, (G + 2) * C - 1, z * C + 1), Blocks.METAL)
 		for z in [z0, z1]:
 			if h_at(56, z) >= G - 1:
 				world.fill_box(Vector3i(56, G, z), Vector3i(57, G + 1, z), Blocks.METAL)
@@ -684,7 +695,7 @@ func cutscene_event(n: String) -> void:
 			crash_fx()
 
 func intro_shots() -> Array:
-	var V := VoxelWorld.VOXEL
+	var V := VoxelWorld.CELL_M
 	var c := Vector3(64, G, 50) * V
 	var S := STAGE_POS
 	return [
@@ -706,7 +717,7 @@ func intro_shots() -> Array:
 
 ## 飞船坠落特效
 func crash_fx() -> void:
-	var V := VoxelWorld.VOXEL
+	var V := VoxelWorld.CELL_M
 	var target := Vector3(14, G - 1, 74) * V
 	var start := target + Vector3(-30, 45, -40)
 	var pod := Node3D.new()

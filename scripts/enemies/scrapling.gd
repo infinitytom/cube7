@@ -286,6 +286,7 @@ func _check_contact(p: MorphBall) -> void:
 			var away := p.global_position - global_position
 			away.y = 0.0
 			p.linear_velocity = away.normalized() * 7.0 + Vector3.UP * 3.5
+			p._jumped_now = true
 			p.launched(0.3)
 			p.attack = ""
 			_knock = -away.normalized() * 3.0
