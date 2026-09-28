@@ -63,7 +63,11 @@ func _physics_process(delta: float) -> void:
 			_ign_t = 0.15
 			var w := get_tree().get_first_node_in_group("voxel_world") as VoxelWorld
 			if w and w.fire.ignite_sphere(global_position, 0.6) > 0:
-				_hot_t = minf(_hot_t, 0.6)
+				# 火种点着东西以后就“用掉了”：缩小消失（补给点会再生成一个）
+				_hot_t = 0.0
+				var tw := create_tween()
+				tw.tween_property(self, "scale", Vector3.ONE * 0.05, 0.4)
+				tw.tween_callback(queue_free)
 	if not held and global_position.y < GameState.kill_y:
 		global_position = home
 		linear_velocity = Vector3.ZERO

@@ -38,9 +38,23 @@ func new_game(i: int) -> void:
 	data = {
 		"version": VERSION, "area": "greenhouse", "saved_at": Time.get_unix_time_from_system(),
 		"play_time": 0.0, "checkpoint": null, "checkpoint_form": -1,
-		"forms": [], "coins": 0, "fragments": [], "seeds": [], "flags": {}, "intro_seen": false,
+		"forms": [], "coins": 0, "fragments": [], "seeds": [], "flags": {}, "intro_seen": false, "chapter": 1,
 	}
 	_play_start = Time.get_ticks_msec() / 1000.0
+	write()
+
+## 进入下一章：保留金币、形态、收集记录，清掉检查点和目标
+func start_chapter(ch: int) -> void:
+	if data.is_empty():
+		return
+	data["chapter"] = ch
+	data["checkpoint"] = null
+	data["checkpoint_form"] = -1
+	data["objective"] = -1
+	data["objective_text"] = ""
+	data["objective_pos"] = null
+	data["forms"] = GameState.unlocked_forms.duplicate()
+	data["coins"] = GameState.coins
 	write()
 
 func load_slot(i: int) -> bool:
@@ -91,6 +105,7 @@ func save_checkpoint(pos: Vector3, form: int) -> void:
 	data["checkpoint"] = [pos.x, pos.y, pos.z]
 	data["checkpoint_form"] = form
 	data["forms"] = GameState.unlocked_forms.duplicate()
+	data["chapter"] = GameState.chapter
 	data["coins"] = GameState.coins
 	data["objective"] = GameState.objective_index
 	data["objective_text"] = GameState.objective_text

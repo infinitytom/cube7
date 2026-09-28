@@ -287,7 +287,7 @@ func _build_ui() -> void:
 	_ui.add_child(_hints)
 	_refresh_glyphs()
 	# 版本号
-	var ver := UIKit.label("原型 v0.8  ·  第一章", 15, Color(1, 1, 1, 0.45))
+	var ver := UIKit.label("原型 v0.9  ·  第一章 ~ 第二章", 15, Color(1, 1, 1, 0.45))
 	UIKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-280, -52, -40, -26))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ui.add_child(ver)
@@ -532,7 +532,7 @@ func _show_menu() -> void:
 	if latest >= 0:
 		var d := SaveGame.read(latest)
 		first = _item("继续游戏", func() -> void: _continue(latest),
-			"存档 %d  ·  第一章 翠绿温室群岛  ·  %s" % [latest + 1, SaveGame.format_time(float(d.get("play_time", 0)))])
+			"存档 %d  ·  %s %s  ·  %s" % [latest + 1, Chapters.info(int(d.get("chapter", 1))).num, Chapters.info(int(d.get("chapter", 1))).title, SaveGame.format_time(float(d.get("play_time", 0)))])
 	var ng := _item("新游戏", func() -> void: _open_slots("new"))
 	if first == null:
 		first = ng
@@ -612,10 +612,12 @@ func _open_slots(mode: String) -> void:
 			b.disabled = mode == "load"
 		else:
 			var when := Time.get_datetime_string_from_unix_time(int(float(d.get("saved_at", 0))) + 8 * 3600, true)
-			var cleared := bool((d.get("flags", {}) as Dictionary).get("gh_clear", false))
-			b.text = "存档 %d   ·   第一章 翠绿温室群岛%s\n游戏时间 %s   ·   救出噗噗 %d/3   ·   记忆碎片 %d/3   ·   %s" % [
-				i + 1, "   ·   已通关" if cleared else "", SaveGame.format_time(float(d.get("play_time", 0))),
-				(d.get("seeds", []) as Array).size(), (d.get("fragments", []) as Array).size(), when.substr(5, 11)]
+			var chi := Chapters.info(int(d.get("chapter", 1)))
+			var cleared := bool((d.get("flags", {}) as Dictionary).get("gh_clear" if int(d.get("chapter", 1)) == 1 else "ch%d_clear" % int(d.get("chapter", 1)), false))
+			var tot := Chapters.count() * 3
+			b.text = "存档 %d   ·   %s %s%s\n游戏时间 %s   ·   救出噗噗 %d/%d   ·   记忆碎片 %d/%d   ·   %s" % [
+				i + 1, chi.num, chi.title, "   ·   已通关" if cleared else "", SaveGame.format_time(float(d.get("play_time", 0))),
+				(d.get("seeds", []) as Array).size(), tot, (d.get("fragments", []) as Array).size(), tot, when.substr(5, 11)]
 		UIKit.juice(b)
 		b.pressed.connect(func() -> void: _pick_slot(i, d.is_empty()))
 		v.add_child(b)

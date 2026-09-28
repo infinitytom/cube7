@@ -9,6 +9,7 @@ const SETTLE_MIN := 24   ## 至少这么多体素的碎块落地后会固定下�
 
 var world: VoxelWorld
 var blocks: Array = []        # [[本地坐标 Vector3, 方块类型 int], ...]
+var spawn_origin := Vector3.ZERO   ## 生成时的中心（世界体素空间里的位置，用来对齐碰撞盒）
 var _age := 0.0
 var _done := false
 static var _mat: StandardMaterial3D
@@ -39,18 +40,18 @@ func _ready() -> void:
 			if occupied.has(key + n):
 				continue
 			_face(st, lp, Vector3(n), V * 0.5, col * (0.8 + 0.2 * Vector3(n).dot(Vector3(0.3, 0.9, 0.3))))
-		# 碰撞按 0.5 米的格合并
-		cells[Vector3i((lp / VoxelWorld.CELL_M).floor())] = true
+		# 碰撞按 0.5 米的格合并（按世界网格对齐，免得盒子伸出体素外面）
+		cells[Vector3i(((lp + spawn_origin) / VoxelWorld.CELL_M).floor())] = true
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	mi.material_override = _mat
 	add_child(mi)
 	var shape_box := BoxShape3D.new()
-	shape_box.size = Vector3.ONE * VoxelWorld.CELL_M * 0.92
+	shape_box.size = Vector3.ONE * VoxelWorld.CELL_M * 0.96
 	for c in cells:
 		var cs := CollisionShape3D.new()
 		cs.shape = shape_box
-		cs.position = (Vector3(c) + Vector3.ONE * 0.5) * VoxelWorld.CELL_M
+		cs.position = (Vector3(c) + Vector3.ONE * 0.5) * VoxelWorld.CELL_M - spawn_origin
 		add_child(cs)
 	mass = maxf(0.05 * blocks.size(), 0.5)
 
@@ -68,16 +69,27 @@ func _face(st: SurfaceTool, c: Vector3, n: Vector3, h: float, col: Color) -> voi
 	for k in tri:
 		st.add_vertex(q[k])
 
+## 只有“底下被托住”（接触法线朝上）才算落地；侧面蹭到东西不算
+var _floor_contact := false
+
+func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	_floor_contact = false
+	for i in state.get_contact_count():
+		if state.get_contact_local_normal(i).y > 0.6:
+			_floor_contact = true
+			return
+
 func _physics_process(delta: float) -> void:
 	_age += delta
 	if _done:
 		return
 	# 大块的结构（比如烧断支撑后塌下来的木桥）落地后“重新长回”体素世界，可以当新的路走；
 	# 小碎块落地（或超时）就碎掉
-	var landed := _age > 0.35 and get_contact_count() > 0 and linear_velocity.length() < 2.5
-	if landed and blocks.size() >= SETTLE_MIN:
+	var landed := _age > 0.35 and _floor_contact and linear_velocity.length() < 2.5
+	# 大块要真正停稳（几乎不动）才固定下来
+	if landed and blocks.size() >= SETTLE_MIN and linear_velocity.length() < 0.6 and angular_velocity.length() < 0.8:
 		settle()
-	elif _age > (LIFETIME * 2.5 if blocks.size() >= SETTLE_MIN else LIFETIME) or (landed and blocks.size() < SETTLE_MIN):
+	elif _age > (LIFETIME * 4.0 if blocks.size() >= SETTLE_MIN else LIFETIME) or (landed and blocks.size() < SETTLE_MIN):
 		crumble()
 
 func settle() -> void:

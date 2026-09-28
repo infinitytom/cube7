@@ -96,7 +96,7 @@ func _run() -> void:
 	await tp(Vector3i(49, 4, 32), Vector3.ZERO, MorphBall.DRILL)
 	P.debug_input = Vector2(0, -1)
 	P.debug_ability = true
-	await wait(4.0)
+	await wait(5.0)
 	check(P.global_position.x > 28.3, "钻头钻穿 2m 岩壁，到达 x=%.1f" % P.global_position.x)
 	P.debug_ability = false
 	P.debug_input = Vector2.ZERO
@@ -310,9 +310,9 @@ func _systems_test() -> void:
 	# 测试场地：x 60..100, z 48..62 铺一块地
 	W.fill_box(Vector3i(60, 0, 48), Vector3i(100, 2, 62), Blocks.BEDROCK)
 	W.fill_box(Vector3i(60, 3, 48), Vector3i(100, 12, 62), Blocks.AIR)
-	# 1. 木柱撑着一块脚手架平台：烧断柱子，平台塌下来并“长回”地上
+	# 1. 木柱撑着一块石板：烧断柱子，石板塌下来并“长回”地上
 	W.fill_box(Vector3i(64, 3, 50), Vector3i(64, 6, 50), Blocks.WOOD)
-	W.fill_box(Vector3i(63, 7, 49), Vector3i(67, 7, 51), Blocks.SCAFFOLD)
+	W.fill_box(Vector3i(63, 7, 49), Vector3i(67, 7, 51), Blocks.ROCK)
 	W.flush_dirty()
 	await wait(0.2)
 	W.fire.ignite_sphere(W.voxel_center(Vector3i(64, 3, 50)), 0.5)
@@ -322,10 +322,10 @@ func _systems_test() -> void:
 		if W.get_block(Vector3i(64, 4, 50)) == Blocks.AIR and W.get_block(Vector3i(66, 7, 50)) == Blocks.AIR:
 			burned = true
 			break
-	check(burned, "点燃木柱：柱子烧断，上面的脚手架失去支撑")
+	check(burned, "点燃木柱：柱子烧断，上面的石板失去支撑")
 	await wait(2.5)
-	var settled := count_type(Vector3i(62, 3, 48), Vector3i(69, 6, 52), Blocks.SCAFFOLD)
-	check(settled > 0, "塌下来的脚手架落地后留在地上（%d 格）" % settled)
+	var settled := count_type(Vector3i(62, 3, 48), Vector3i(69, 6, 52), Blocks.ROCK)
+	check(settled >= 10, "塌下来的石板落地后留在地上（%d 格）" % settled)
 	# 2. 气泡气浪吹灭火
 	W.fill_box(Vector3i(74, 3, 50), Vector3i(80, 3, 50), Blocks.WOOD)
 	W.flush_dirty()

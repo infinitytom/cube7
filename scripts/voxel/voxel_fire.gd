@@ -8,7 +8,7 @@ extends Node3D
 
 const TICK := 0.1
 const MAX_BURNING := 700
-const SPREAD := 1.6          ## 每秒引燃一个相邻可燃体素的概率（向上 ×2，向下 ×0.4）
+const SPREAD := 2.4          ## 每秒引燃一个相邻可燃体素的概率（向上 ×2，向下 ×0.4）
 const HURT_RANGE := 0.55
 
 var world: VoxelWorld
@@ -165,7 +165,8 @@ func _physics_process(delta: float) -> void:
 		if info[0] <= 0.0:
 			done.append(p)
 	for p in spread:
-		ignite(p)
+		if _rng.randf() < Blocks.catch_fire[world.vget(p)]:
+			ignite(p)
 	var burned: Array[Vector3i] = []
 	for p in done:
 		var info: Array = burning[p]
@@ -177,11 +178,24 @@ func _physics_process(delta: float) -> void:
 		if world._first_hit(p):
 			world._drops(p, orig)
 		if Blocks.explodes[orig] == 1:
-			_explode(world.vcenter(p))
+			explode_at(world.vcenter(p))
 	if not burned.is_empty():
 		world.detach_floating(burned)
 	_hurt_player()
 	_update_fx(dt)
+
+## 一个燃料桶只炸一次：0.3 秒内附近已经炸过就不再炸
+var _recent: Array = []
+
+func explode_at(pos: Vector3) -> void:
+	var now := Time.get_ticks_msec()
+	for e in _recent:
+		if now - int(e[1]) < 300 and (e[0] as Vector3).distance_to(pos) < 1.2:
+			return
+	_recent.append([pos, now])
+	if _recent.size() > 8:
+		_recent.pop_front()
+	_explode(pos)
 
 func _explode(pos: Vector3) -> void:
 	# 燃料桶：一整桶只炸一次——把同一个桶里剩下的体素也清掉

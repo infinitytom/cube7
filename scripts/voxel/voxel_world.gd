@@ -568,6 +568,9 @@ func vbreak(p: Vector3i, tool: String, power: float, fx := true) -> bool:
 	if fx:
 		_spawn_break_fx(p, t)
 	block_broken.emit(p, t)
+	# 燃料桶被撞碎/钻破也会炸
+	if Blocks.explodes[t] == 1 and fire:
+		fire.explode_at.call_deferred(vcenter(p))
 	if Blocks.chain[t] == 1:
 		_chain_from(p, t)
 	return true
@@ -611,7 +614,7 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 			for x in range(c.x - r, c.x + r + 1):
 				var p := Vector3i(x, y, z)
 				var bt := vget(p)
-				if bt == Blocks.AIR or (soft_only and Blocks.soft[bt] == 0):
+				if bt == Blocks.AIR or (soft_only and Blocks.soft[bt] == 0 and bt != Blocks.COPPER):
 					continue
 				var off := vcenter(p) - center
 				# 沿撞击方向压扁距离 → 坑沿着冲击方向更深
@@ -631,7 +634,7 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 
 var _rng := RandomNumberGenerator.new()
 
-const DETACH_LIMIT := 360
+const DETACH_LIMIT := 900
 
 ## 检查被破坏位置周围：和大地失去连接、又足够小的一团方块会变成掉落的碎块。
 ## 连到打不坏的方块（合金、金属……）、或者一团超过 DETACH_LIMIT 格，都算“有支撑”。
@@ -647,8 +650,9 @@ func detach_floating(around: Array[Vector3i]) -> void:
 				continue
 			_spawn_chunk(comp)
 
+## 燃烧中的方块在烧完之前仍然算“撑着”（否则烧到一半的木架会一块块掉下去，把火也带走）
 func _detachable(t: int) -> bool:
-	return t != Blocks.AIR and Blocks.falls[t] == 0 and (Blocks.impact[t] >= 0.0 or Blocks.drill[t] == 1)
+	return t != Blocks.AIR and t != Blocks.FIRE and Blocks.falls[t] == 0 and (Blocks.impact[t] >= 0.0 or Blocks.drill[t] == 1)
 
 ## 从 start 出发找连通块；有支撑返回空数组
 func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
@@ -694,10 +698,13 @@ func _spawn_chunk(cells: Array[Vector3i]) -> void:
 	var ch := VoxelChunk.new()
 	ch.world = self
 	ch.blocks = list
+	ch.spawn_origin = to_local(mid)
 	add_child(ch)
 	ch.global_position = mid
-	ch.angular_velocity = Vector3(_rng.randf_range(-2, 2), _rng.randf_range(-1, 1), _rng.randf_range(-2, 2))
-	ch.linear_velocity = Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.5, 2.0), _rng.randf_range(-1, 1))
+	# 小碎块崩开时带一点随机翻滚；大块结构（桥板、墙）直直地往下掉
+	var k := clampf(1.0 - (cells.size() - 24) / 150.0, 0.0, 1.0)
+	ch.angular_velocity = Vector3(_rng.randf_range(-2, 2), _rng.randf_range(-1, 1), _rng.randf_range(-2, 2)) * k
+	ch.linear_velocity = Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.5, 2.0), _rng.randf_range(-1, 1)) * k
 
 ## 在世界坐标处播放破坏特效和掉落（碎块落地时用）
 func break_fx_at(pos: Vector3, t: int, drops: bool) -> void:

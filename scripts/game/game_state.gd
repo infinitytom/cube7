@@ -60,6 +60,7 @@ func _process(delta: float) -> void:
 			combo = 0
 var player: Node3D
 var camera: Node3D
+var chapter := 1                    ## 当前章节（1 翠绿温室群岛 / 2 齿轮工坊）
 var seeds := 0                      ## 本章救出的噗噗（打开的种子方块）
 var seeds_total := 3
 var checkpoint := Vector3(4.75, 3.5, 16.0)

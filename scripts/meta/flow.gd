@@ -5,6 +5,7 @@ extends CanvasLayer
 ##   mode = "debug"    命令行测试
 
 var mode := "debug"
+var chapter := 0            ## 要进入的章节（0 = 按存档）
 var _fade: ColorRect
 var busy := false
 

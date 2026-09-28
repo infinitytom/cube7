@@ -7,7 +7,7 @@ enum {
 	CRATE, CRATE_ITEM, DOOR, SOURCE, RECEIVER, RECEIVER_ON, GATE, TILE, TRACK, GOAL, PLATE,
 	WOOD, LEAVES, GEODE, HULL, CLIFF, PAVING, MOSS, LAMP, HULL_DARK, LOOSE, SUPPORT,
 	CLIFF_B, CLIFF_C, PINE, BLOSSOM,
-	FIRE, EMBER, COPPER, BARREL, REINFORCED, SCAFFOLD, VENT,
+	FIRE, EMBER, COPPER, BARREL, REINFORCED, SCAFFOLD, VENT, BRAMBLE,
 	COUNT,
 }
 
@@ -19,7 +19,7 @@ enum Render { NONE, OPAQUE, GLASS, GLOW }
 ## item：破坏后留在场上的“可用物件”（只有它会保留）
 const DEFS := {
 	BEDROCK: {"name": "外星合金", "color": Color("4a4f63"), "render": Render.OPAQUE},
-	GRASS: {"name": "草地", "color": Color("6cae4f"), "drill": true, "burn": 0.8, "burn_to": DIRT},
+	GRASS: {"name": "草地", "color": Color("6cae4f"), "drill": true, "burn": 0.8, "burn_to": DIRT, "catch": 0.08},
 	DIRT: {"name": "泥土", "color": Color("8b5e3c"), "drill": true},
 	SAND: {"name": "砂", "color": Color("e2c58f"), "impact": 2.5, "drill": true, "falls": true, "soft": true},
 	GLASS: {"name": "玻璃", "color": Color("b9e3f5"), "impact": 7.5, "drill": true, "render": Render.GLASS},
@@ -38,7 +38,7 @@ const DEFS := {
 	TRACK: {"name": "平衡轨道", "color": Color("c98a5e")},
 	GOAL: {"name": "终点信标", "color": Color("ffd84d"), "render": Render.GLOW},
 	PLATE: {"name": "压力板", "color": Color("e38b3a")},
-	WOOD: {"name": "木头", "color": Color("7a4f31"), "drill": true, "burn": 5.0},
+	WOOD: {"name": "木头", "color": Color("7a4f31"), "drill": true, "burn": 5.0, "catch": 0.5},
 	LEAVES: {"name": "树叶", "color": Color("4d9444"), "impact": 1.5, "drill": true, "burn": 1.2},
 	GEODE: {"name": "晶洞", "color": Color("8a63d2"), "drill": true, "item": "crystal", "energy": 2},
 	HULL: {"name": "飞船外壳", "color": Color("e9edf2")},
@@ -59,6 +59,7 @@ const DEFS := {
 	REINFORCED: {"name": "加固墙", "color": Color("6c7385"), "impact": 16.0},
 	SCAFFOLD: {"name": "木脚手架", "color": Color("c89a5b"), "impact": 5.0, "drill": true, "burn": 2.5},
 	VENT: {"name": "熔炉口", "color": Color("ffb347"), "render": Render.GLOW, "ignites": true},
+	BRAMBLE: {"name": "枯荆棘", "color": Color("7a5a6e"), "burn": 1.4},
 	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1, "burn": 2.5},
 }
 
@@ -74,6 +75,7 @@ static var burn := PackedFloat32Array()  ## 可燃：烧多久（秒），0 = �
 static var burn_to := PackedByteArray()  ## 烧完变成什么（默认空气）
 static var ignites := PackedByteArray()  ## 会点燃旁边的可燃物（炭火、熔炉口）
 static var explodes := PackedByteArray() ## 烧完会爆炸（燃料桶）
+static var catch_fire := PackedFloat32Array()  ## 被旁边的火引燃的难易（草地很低，免得一烧一大片）
 
 static func _static_init() -> void:
 	colors.resize(COUNT)
@@ -88,6 +90,7 @@ static func _static_init() -> void:
 	burn_to.resize(COUNT)
 	ignites.resize(COUNT)
 	explodes.resize(COUNT)
+	catch_fire.resize(COUNT)
 	for t in COUNT:
 		var d: Dictionary = DEFS.get(t, {})
 		colors[t] = d.get("color", Color.MAGENTA)
@@ -102,6 +105,7 @@ static func _static_init() -> void:
 		burn_to[t] = int(d.get("burn_to", AIR))
 		ignites[t] = 1 if d.get("ignites", false) else 0
 		explodes[t] = 1 if d.get("explodes", false) else 0
+		catch_fire[t] = float(d.get("catch", 1.0))
 
 static func def(t: int) -> Dictionary:
 	return DEFS.get(t, {})

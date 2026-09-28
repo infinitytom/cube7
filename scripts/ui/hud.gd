@@ -145,15 +145,16 @@ func _show_clear() -> void:
 	_root.add_child(dim)
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG_SOLID, UIKit.ACCENT2, 20, 36, 2))
-	UIKit.place(p, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-330, -240, 330, 240))
+	UIKit.place(p, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-380, -240, 380, 240))
 	_root.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 14)
 	p.add_child(v)
-	var small := UIKit.label("第一章  ·  翠绿温室群岛", 20, UIKit.ACCENT, true)
+	var info := Chapters.info(GameState.chapter)
+	var small := UIKit.label("%s  ·  %s" % [info.num, info.title], 20, UIKit.ACCENT, true)
 	small.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(small)
-	var big := UIKit.label("重构塔 1 / 5 点亮", 48, UIKit.TEXT, true)
+	var big := UIKit.label("重构塔 %d / 5 点亮" % int(info.tower), 48, UIKit.TEXT, true)
 	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(big)
 	SaveGame.write()
@@ -195,10 +196,22 @@ func _show_clear() -> void:
 	home.pressed.connect(func() -> void:
 		SaveGame.write()
 		Flow.goto_title())
+	var has_next := GameState.chapter < Chapters.count()
+	if has_next:
+		var nxt := Button.new()
+		nxt.text = "前往%s" % Chapters.info(GameState.chapter + 1).num
+		UIKit.juice(nxt)
+		nxt.pressed.connect(func() -> void:
+			SaveGame.start_chapter(GameState.chapter + 1)
+			Flow.chapter = GameState.chapter + 1
+			Flow.goto_game("next"))
+		btns.add_child(nxt)
+		nxt.grab_focus.call_deferred()
 	btns.add_child(stay)
 	btns.add_child(home)
-	home.grab_focus.call_deferred()
-	p.pivot_offset = Vector2(330, 240)
+	if not has_next:
+		home.grab_focus.call_deferred()
+	p.pivot_offset = Vector2(380, 240)
 	p.scale = Vector2(0.9, 0.9)
 	p.modulate.a = 0.0
 	var tw := create_tween().set_parallel()
