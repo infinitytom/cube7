@@ -36,6 +36,10 @@ func _ready() -> void:
 	if args.any(func(a: String) -> bool: return a.begins_with("--shots")):
 		_attach("res://scripts/debug/screenshots.gd")
 		return
+	for a in args:
+		if a.begins_with("--debugscript="):
+			_attach(a.substr(14))
+			return
 	if args.has("--probe"):
 		_attach("res://scripts/debug/probe.gd")
 		return

@@ -62,6 +62,8 @@ var wall_blown := false
 var vista: Vista
 var boss: FurnaceWarden
 var boss_done := false
+var pillar_cells: Array[Vector3i] = []
+var _pillar_t := 0.0
 var _beam: Node3D
 
 func spawn_yaw() -> float:
@@ -405,7 +407,9 @@ func _tower_island() -> void:
 	for a in [0.785, 2.356, 3.927, 5.498]:
 		var px := int(ARENA.x + cos(a) * 5.5)
 		var pz := int(ARENA.z + sin(a) * 5.5)
-		world.fill_box(Vector3i(px, G + 10, pz), Vector3i(px + 1, G + 14, pz + 1), Blocks.ROCK)
+		world.fill_box(Vector3i(px, G + 10, pz), Vector3i(px + 1, G + 14, pz + 1), Blocks.REINFORCED)
+		for c in cells(Vector3i(px, G + 10, pz), Vector3i(px + 1, G + 14, pz + 1)):
+			pillar_cells.append(c)
 		world.fill_box(Vector3i(px, G + 15, pz), Vector3i(px + 1, G + 15, pz + 1), Blocks.LAMP)
 	# 场地边缘一圈矮栏（防止被撞飞掉下去），西边入口、东边塔前留口
 	for key in heights.keys():
@@ -881,7 +885,23 @@ func apply_save(d: Dictionary) -> void:
 		GameState.objective_index = -1
 		GameState.set_objective(obj, str(d.get("objective_text", "")), AreaGreenhouse._vec(d.get("objective_pos", null)))
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	# Boss 场地的石柱被撞碎以后，维修无人机会慢慢把它补回来（保证总有东西可以引它去撞）
+	if is_instance_valid(boss) and boss.active and boss.state != FurnaceWarden.St.DIZZY:
+		_pillar_t -= delta
+		if _pillar_t <= 0.0:
+			_pillar_t = 0.25
+			for c in pillar_cells:
+				if world.get_block(c) == Blocks.AIR:
+					var pp := world.voxel_center(c)
+					if GameState.player and (GameState.player as Node3D).global_position.distance_to(pp) < 1.2:
+						continue
+					if boss.global_position.distance_to(pp) < 2.0:
+						continue
+					world.set_block(c, Blocks.REINFORCED)
+					world._spawn_debris(pp, Blocks.colors[Blocks.REINFORCED])
+					Sfx.play("clang", pp, -14.0, 0.1, 1.3)
+					break
 	# 荆棘烧开以后记一下（读档不用再烧一遍）
 	if not SaveGame.data.is_empty() and not SaveGame.flag("gw_barricade") and Engine.get_process_frames() % 30 == 0:
 		if world.get_block(Vector3i(BARRICADE_X, G, 77)) != Blocks.BRAMBLE and world.get_block(Vector3i(BARRICADE_X, G + 1, 77)) != Blocks.BRAMBLE and world.get_block(Vector3i(BARRICADE_X, G, 77)) != Blocks.FIRE:

@@ -260,7 +260,8 @@ func _process(delta: float) -> void:
 func _ground_safe(d: Vector3) -> bool:
 	var ahead := global_position + d.normalized() * 1.6
 	var off := Vector2(ahead.x - arena_center.x, ahead.z - arena_center.z)
-	return off.length() < arena_radius and ground_ahead(d.normalized(), 1.6)
+	# 场地是平的：只要还在场地半径里就一定有地面（前方被石柱挡住时射线会从柱子里面打，不能用射线判断）
+	return off.length() < arena_radius
 
 ## 撞上柱子：柱子碎掉，自己晕 3 秒
 func _crash() -> void:
