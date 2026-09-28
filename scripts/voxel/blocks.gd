@@ -7,6 +7,7 @@ enum {
 	CRATE, CRATE_ITEM, DOOR, SOURCE, RECEIVER, RECEIVER_ON, GATE, TILE, TRACK, GOAL, PLATE,
 	WOOD, LEAVES, GEODE, HULL, CLIFF, PAVING, MOSS, LAMP, HULL_DARK, LOOSE, SUPPORT,
 	CLIFF_B, CLIFF_C, PINE, BLOSSOM,
+	FIRE, EMBER, COPPER, BARREL, REINFORCED, SCAFFOLD, VENT,
 	COUNT,
 }
 
@@ -18,7 +19,7 @@ enum Render { NONE, OPAQUE, GLASS, GLOW }
 ## item：破坏后留在场上的“可用物件”（只有它会保留）
 const DEFS := {
 	BEDROCK: {"name": "外星合金", "color": Color("4a4f63"), "render": Render.OPAQUE},
-	GRASS: {"name": "草地", "color": Color("6cae4f"), "drill": true},
+	GRASS: {"name": "草地", "color": Color("6cae4f"), "drill": true, "burn": 0.8, "burn_to": DIRT},
 	DIRT: {"name": "泥土", "color": Color("8b5e3c"), "drill": true},
 	SAND: {"name": "砂", "color": Color("e2c58f"), "impact": 2.5, "drill": true, "falls": true, "soft": true},
 	GLASS: {"name": "玻璃", "color": Color("b9e3f5"), "impact": 7.5, "drill": true, "render": Render.GLASS},
@@ -26,8 +27,8 @@ const DEFS := {
 	ORE: {"name": "金矿", "color": Color("e0ad3a"), "drill": true, "coins": 5},
 	METAL: {"name": "金属", "color": Color("a9b2bd"), "conductive": true},
 	CRYSTAL: {"name": "能量水晶", "color": Color("6fe3ff"), "render": Render.GLOW, "conductive": true},
-	CRATE: {"name": "补给箱", "color": Color("b8773f"), "impact": 2.0, "drill": true, "coins": 1, "energy": 1},
-	CRATE_ITEM: {"name": "物资箱", "color": Color("5b7bd6"), "impact": 2.0, "drill": true, "coins": 1, "item": "crystal"},
+	CRATE: {"name": "补给箱", "color": Color("b8773f"), "impact": 2.0, "drill": true, "coins": 1, "energy": 1, "burn": 2.5},
+	CRATE_ITEM: {"name": "物资箱", "color": Color("5b7bd6"), "impact": 2.0, "drill": true, "coins": 1, "item": "crystal", "burn": 2.5},
 	DOOR: {"name": "能量门", "color": Color("ff7ab8"), "render": Render.GLOW},
 	SOURCE: {"name": "能量源", "color": Color("ffd24a"), "render": Render.GLOW, "conductive": true},
 	RECEIVER: {"name": "接收器（未通电）", "color": Color("6b7285"), "conductive": true},
@@ -37,8 +38,8 @@ const DEFS := {
 	TRACK: {"name": "平衡轨道", "color": Color("c98a5e")},
 	GOAL: {"name": "终点信标", "color": Color("ffd84d"), "render": Render.GLOW},
 	PLATE: {"name": "压力板", "color": Color("e38b3a")},
-	WOOD: {"name": "木头", "color": Color("7a4f31"), "drill": true},
-	LEAVES: {"name": "树叶", "color": Color("4d9444"), "impact": 1.5, "drill": true},
+	WOOD: {"name": "木头", "color": Color("7a4f31"), "drill": true, "burn": 5.0},
+	LEAVES: {"name": "树叶", "color": Color("4d9444"), "impact": 1.5, "drill": true, "burn": 1.2},
 	GEODE: {"name": "晶洞", "color": Color("8a63d2"), "drill": true, "item": "crystal", "energy": 2},
 	HULL: {"name": "飞船外壳", "color": Color("e9edf2")},
 	CLIFF: {"name": "悬崖岩", "color": Color("b3896a")},
@@ -49,9 +50,16 @@ const DEFS := {
 	LOOSE: {"name": "松土", "color": Color("9a6a48"), "drill": true, "soft": true},
 	CLIFF_B: {"name": "悬崖岩（深层）", "color": Color("96735a")},
 	CLIFF_C: {"name": "悬崖岩（灰层）", "color": Color("7f6f64")},
-	PINE: {"name": "松针", "color": Color("2f6e45"), "impact": 1.5, "drill": true},
-	BLOSSOM: {"name": "花冠", "color": Color("f0a7bd"), "impact": 1.5, "drill": true},
-	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1},
+	PINE: {"name": "松针", "color": Color("2f6e45"), "impact": 1.5, "drill": true, "burn": 1.2},
+	BLOSSOM: {"name": "花冠", "color": Color("f0a7bd"), "impact": 1.5, "drill": true, "burn": 1.2},
+	FIRE: {"name": "燃烧中", "color": Color("ff8a3d"), "render": Render.GLOW, "impact": 2.0, "drill": true},
+	EMBER: {"name": "炭火", "color": Color("ff5a2a"), "render": Render.GLOW, "ignites": true},
+	COPPER: {"name": "铜导线", "color": Color("c9814a"), "drill": true, "conductive": true},
+	BARREL: {"name": "燃料桶", "color": Color("d9463b"), "impact": 3.0, "drill": true, "burn": 1.4, "explodes": true},
+	REINFORCED: {"name": "加固墙", "color": Color("6c7385"), "impact": 16.0},
+	SCAFFOLD: {"name": "木脚手架", "color": Color("c89a5b"), "impact": 5.0, "drill": true, "burn": 2.5},
+	VENT: {"name": "熔炉口", "color": Color("ffb347"), "render": Render.GLOW, "ignites": true},
+	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1, "burn": 2.5},
 }
 
 static var colors := PackedColorArray()
@@ -62,6 +70,10 @@ static var conductive := PackedByteArray()
 static var falls := PackedByteArray()
 static var soft := PackedByteArray()     ## 钻头能往下钻的方块（避免把自己困在坑里）
 static var chain := PackedByteArray()    ## 连锁崩塌：一块被破坏，相连的同类方块依次崩塌
+static var burn := PackedFloat32Array()  ## 可燃：烧多久（秒），0 = 不可燃
+static var burn_to := PackedByteArray()  ## 烧完变成什么（默认空气）
+static var ignites := PackedByteArray()  ## 会点燃旁边的可燃物（炭火、熔炉口）
+static var explodes := PackedByteArray() ## 烧完会爆炸（燃料桶）
 
 static func _static_init() -> void:
 	colors.resize(COUNT)
@@ -72,6 +84,10 @@ static func _static_init() -> void:
 	falls.resize(COUNT)
 	soft.resize(COUNT)
 	chain.resize(COUNT)
+	burn.resize(COUNT)
+	burn_to.resize(COUNT)
+	ignites.resize(COUNT)
+	explodes.resize(COUNT)
 	for t in COUNT:
 		var d: Dictionary = DEFS.get(t, {})
 		colors[t] = d.get("color", Color.MAGENTA)
@@ -82,6 +98,10 @@ static func _static_init() -> void:
 		falls[t] = 1 if d.get("falls", false) else 0
 		soft[t] = 1 if d.get("soft", false) else 0
 		chain[t] = 1 if d.get("chain", false) else 0
+		burn[t] = float(d.get("burn", 0.0))
+		burn_to[t] = int(d.get("burn_to", AIR))
+		ignites[t] = 1 if d.get("ignites", false) else 0
+		explodes[t] = 1 if d.get("explodes", false) else 0
 
 static func def(t: int) -> Dictionary:
 	return DEFS.get(t, {})

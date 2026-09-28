@@ -476,6 +476,9 @@ func _pound_land() -> void:
 func _wave() -> void:
 	_ring_fx(FORMS[BUBBLE].color, WAVE_RADIUS)
 	Sfx.play("wave", global_position, -2.0, 0.05)
+	# 气浪能把附近的火吹灭
+	if world and world.fire and world.fire.extinguish_sphere(global_position, WAVE_RADIUS) > 0:
+		FloatText.spawn(get_parent(), global_position + Vector3.UP * 0.8, "火吹灭了", Color("9fe8ff"), 40, 1.2)
 	for e in get_tree().get_nodes_in_group("enemy"):
 		var d := (e as Node3D).global_position.distance_to(global_position)
 		if d < WAVE_RADIUS:

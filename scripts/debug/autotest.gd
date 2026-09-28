@@ -200,6 +200,7 @@ func _run() -> void:
 
 	await _enemy_tests()
 	await _chunk_test()
+	await _systems_test()
 
 	print("===== 金币 %d · 能源 %d · 护盾 %d · 破坏方块 %d =====" % [GameState.coins, GameState.energy, GameState.shield, GameState.blocks_broken])
 	if fails.is_empty():
@@ -302,3 +303,80 @@ func _chunk_test() -> void:
 		if c is VoxelChunk:
 			left += 1
 	check(left == 0, "碎块落地后碎掉消失")
+
+
+func _systems_test() -> void:
+	print("  —— 物理系统：燃烧 / 爆炸 / 电网 / 坍塌重建 ——")
+	# 测试场地：x 60..100, z 48..62 铺一块地
+	W.fill_box(Vector3i(60, 0, 48), Vector3i(100, 2, 62), Blocks.BEDROCK)
+	W.fill_box(Vector3i(60, 3, 48), Vector3i(100, 12, 62), Blocks.AIR)
+	# 1. 木柱撑着一块脚手架平台：烧断柱子，平台塌下来并“长回”地上
+	W.fill_box(Vector3i(64, 3, 50), Vector3i(64, 6, 50), Blocks.WOOD)
+	W.fill_box(Vector3i(63, 7, 49), Vector3i(67, 7, 51), Blocks.SCAFFOLD)
+	W.flush_dirty()
+	await wait(0.2)
+	W.fire.ignite_sphere(W.voxel_center(Vector3i(64, 3, 50)), 0.5)
+	var burned := false
+	for k in 90:
+		await wait(0.2)
+		if W.get_block(Vector3i(64, 4, 50)) == Blocks.AIR and W.get_block(Vector3i(66, 7, 50)) == Blocks.AIR:
+			burned = true
+			break
+	check(burned, "点燃木柱：柱子烧断，上面的脚手架失去支撑")
+	await wait(2.5)
+	var settled := count_type(Vector3i(62, 3, 48), Vector3i(69, 6, 52), Blocks.SCAFFOLD)
+	check(settled > 0, "塌下来的脚手架落地后留在地上（%d 格）" % settled)
+	# 2. 气泡气浪吹灭火
+	W.fill_box(Vector3i(74, 3, 50), Vector3i(80, 3, 50), Blocks.WOOD)
+	W.flush_dirty()
+	W.fire.ignite_sphere(W.voxel_center(Vector3i(77, 3, 50)), 1.2)
+	await wait(0.4)
+	var b0 := W.fire.burning.size()
+	await tp(Vector3i(77, 3, 52), Vector3.ZERO, MorphBall.BUBBLE)
+	P.debug_ability_pressed = true
+	await wait(0.4)
+	check(b0 > 0 and W.fire.burning.size() < b0, "气浪吹灭了火（%d → %d）" % [b0, W.fire.burning.size()])
+	await tp(Vector3i(70, 3, 60), Vector3.ZERO, MorphBall.BALL)
+	await wait(0.3)
+	W.fire.extinguish_sphere(W.voxel_center(Vector3i(77, 3, 50)), 5.0)
+	# 3. 燃料桶爆炸炸开加固墙
+	W.fill_box(Vector3i(86, 3, 49), Vector3i(86, 5, 53), Blocks.REINFORCED)
+	W.fill_box(Vector3i(85, 3, 51), Vector3i(85, 3, 51), Blocks.BARREL)
+	W.flush_dirty()
+	var r0 := count_type(Vector3i(86, 3, 49), Vector3i(86, 5, 53), Blocks.REINFORCED)
+	await tp(Vector3i(84, 3, 51), Vector3(-5, 0, 0))
+	check(not W.try_break(Vector3i(86, 4, 51), "impact", 12.0), "加固墙 12 m/s 也撞不开")
+	await tp(Vector3i(70, 3, 60))
+	W.fire.ignite_sphere(W.voxel_center(Vector3i(85, 3, 51)), 0.4)
+	await wait(3.0)
+	var r1 := count_type(Vector3i(86, 3, 49), Vector3i(86, 5, 53), Blocks.REINFORCED)
+	check(r1 < r0, "燃料桶烧完爆炸，炸开加固墙（%d → %d）" % [r0, r1])
+	# 4. 电网：能量源 → 铜线 → 电控门；钻断铜线门关上，补上金属块门又开
+	W.fill_box(Vector3i(60, 3, 58), Vector3i(100, 12, 62), Blocks.AIR)
+	W.fill_box(Vector3i(62, 3, 60), Vector3i(62, 3, 60), Blocks.SOURCE)
+	W.fill_box(Vector3i(63, 3, 60), Vector3i(70, 3, 60), Blocks.COPPER)
+	W.fill_box(Vector3i(71, 3, 60), Vector3i(71, 3, 60), Blocks.RECEIVER)
+	W.flush_dirty()
+	var grid := PowerGrid.new()
+	L.add_child(grid)
+	grid.setup(W, Vector3i(58, 0, 46), Vector3i(102, 14, 64))
+	var door := PowerDoor.new()
+	L.add_child(door)
+	door.setup(W, [Vector3i(72, 3, 61), Vector3i(72, 4, 61), Vector3i(72, 5, 61)] as Array[Vector3i], [Vector3i(71, 3, 60)] as Array[Vector3i])
+	grid.add_device(door)
+	var lift := Lift.new()
+	lift.a = W.voxel_top(Vector3i(80, 2, 60))
+	lift.b = lift.a + Vector3.UP * 2.0
+	lift.power_cells = [Vector3i(71, 3, 60)] as Array[Vector3i]
+	L.add_child(lift)
+	grid.add_device(lift)
+	await wait(0.5)
+	check(W.get_block(Vector3i(72, 4, 61)) == Blocks.AIR and W.get_block(Vector3i(71, 3, 60)) == Blocks.RECEIVER_ON, "通电：接收器亮起，电控门打开")
+	await wait(1.2)
+	check(lift.global_position.y > lift.a.y + 0.3, "通电的升降台开始上升（%.1f m）" % (lift.global_position.y - lift.a.y))
+	W.try_break(Vector3i(66, 3, 60), "drill", 1.0)
+	await wait(0.4)
+	check(W.get_block(Vector3i(72, 4, 61)) == Blocks.DOOR and W.get_block(Vector3i(71, 3, 60)) == Blocks.RECEIVER, "钻断铜线：断电，门关上")
+	W.set_block(Vector3i(66, 3, 60), Blocks.METAL)
+	await wait(0.4)
+	check(W.get_block(Vector3i(72, 4, 61)) == Blocks.AIR, "补上一块金属：重新接通，门打开")

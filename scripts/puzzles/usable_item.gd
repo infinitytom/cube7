@@ -8,6 +8,9 @@ extends RigidBody3D
 
 var held := false
 var home := Vector3.ZERO
+## 火种：刚扔出去 / 放下的几秒内会点燃碰到的可燃物
+var _hot_t := 0.0
+var _ign_t := 0.0
 var _outline: MeshInstance3D
 var _t := 0.0
 
@@ -52,14 +55,26 @@ func _process(delta: float) -> void:
 	_t += delta
 	_outline.scale = Vector3.ONE * (1.0 + 0.06 * sin(_t * 5.0))
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	if item_id == "ember" and not held and _hot_t > 0.0:
+		_hot_t -= delta
+		_ign_t -= delta
+		if _ign_t <= 0.0:
+			_ign_t = 0.15
+			var w := get_tree().get_first_node_in_group("voxel_world") as VoxelWorld
+			if w and w.fire.ignite_sphere(global_position, 0.6) > 0:
+				_hot_t = minf(_hot_t, 0.6)
 	if not held and global_position.y < GameState.kill_y:
 		global_position = home
 		linear_velocity = Vector3.ZERO
-		GameState.say("晶块掉下去了，我把它传送回原处。")
+		GameState.say("晶块掉下去了，我把它传送回原处。" if item_id != "ember" else "火种掉下去了——炉子那边会再生成一个。")
+		if item_id == "ember":
+			queue_free()
 
 func set_held(v: bool) -> void:
 	held = v
+	if not v:
+		_hot_t = 3.0
 	freeze = v
 	collision_layer = 0 if v else 4
 	collision_mask = 0 if v else (1 | 2 | 4 | 8)

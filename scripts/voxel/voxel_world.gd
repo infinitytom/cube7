@@ -63,6 +63,7 @@ var _gdirty := {}
 var _dirty := {}
 var _cell_hit := {}        ## 已经掉过落物的格（一格只掉一次金币/能量/道具）
 var _cell_shapes := {}
+var fire: VoxelFire
 var _falling := {}
 var _fall_timer := 0.0
 var _materials: Array[Material] = []
@@ -71,6 +72,10 @@ var _face_ccw: Array[bool] = []
 
 func _ready() -> void:
 	add_to_group("voxel_world")
+	fire = VoxelFire.new()
+	fire.name = "Fire"
+	fire.world = self
+	add_child(fire)
 	data.resize(size.x * size.y * size.z)
 	data.fill(Blocks.AIR)
 	shapes.resize(data.size())
@@ -101,6 +106,9 @@ func setup(new_size: Vector3i) -> void:
 		(c["mesh"] as Node).queue_free()
 	_chunks.clear()
 	_sub.clear()
+	if fire:
+		fire.burning.clear()
+		fire.sources.clear()
 	_gdirty.clear()
 	_dirty.clear()
 	_falling.clear()
@@ -149,6 +157,8 @@ func vset(p: Vector3i, t: int) -> void:
 				_falling[p + d] = true
 	elif Blocks.falls[t] == 1:
 		_falling[p] = true
+	if Blocks.ignites[t] == 1 and fire:
+		fire.sources[p] = true
 	block_changed.emit(p, old, t)
 	cell_changed.emit(Vector3i(p.x >> 1, p.y >> 1, p.z >> 1), old, t)
 

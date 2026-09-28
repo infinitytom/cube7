@@ -4,6 +4,15 @@ extends Zone
 
 @export var strength := 3.2
 @export var max_rise_speed := 3.0   ## 上升速度上限，防止冲出场外
+## 接上电网的风扇：没电时不吹
+var power_cells: Array[Vector3i] = []
+var is_powered := true
+var _ps: CPUParticles3D
+
+func set_powered(on: bool) -> void:
+	is_powered = on
+	if _ps:
+		_ps.emitting = on
 
 func _build() -> void:
 	var ps := CPUParticles3D.new()
@@ -22,8 +31,12 @@ func _build() -> void:
 	ps.mesh = m
 	ps.position = Vector3(0, -box_size.y * 0.5, 0)
 	add_child(ps)
+	_ps = ps
+	ps.emitting = is_powered
 
 func _physics_process(_delta: float) -> void:
+	if not is_powered:
+		return
 	for b in get_overlapping_bodies():
 		if b is RigidBody3D and not b.freeze and b.linear_velocity.y < max_rise_speed:
 			b.apply_central_force(Vector3.UP * strength)

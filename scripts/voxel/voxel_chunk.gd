@@ -5,6 +5,7 @@ extends RigidBody3D
 ## 体素很细（0.25 米），一团可能有几百个：网格合并成一个，碰撞按“格”（0.5 米）合并成盒子。
 
 const LIFETIME := 1.6
+const SETTLE_MIN := 24   ## 至少这么多体素的碎块落地后会固定下来
 
 var world: VoxelWorld
 var blocks: Array = []        # [[本地坐标 Vector3, 方块类型 int], ...]
@@ -71,9 +72,33 @@ func _physics_process(delta: float) -> void:
 	_age += delta
 	if _done:
 		return
-	# 落地撞击（速度骤减）或超时就碎掉
-	if _age > LIFETIME or (_age > 0.35 and get_contact_count() > 0 and linear_velocity.length() < 2.5):
+	# 大块的结构（比如烧断支撑后塌下来的木桥）落地后“重新长回”体素世界，可以当新的路走；
+	# 小碎块落地（或超时）就碎掉
+	var landed := _age > 0.35 and get_contact_count() > 0 and linear_velocity.length() < 2.5
+	if landed and blocks.size() >= SETTLE_MIN:
+		settle()
+	elif _age > (LIFETIME * 2.5 if blocks.size() >= SETTLE_MIN else LIFETIME) or (landed and blocks.size() < SETTLE_MIN):
 		crumble()
+
+func settle() -> void:
+	if _done or world == null:
+		return
+	_done = true
+	var placed := 0
+	var k := 0
+	for b in blocks:
+		var p := world.to_v(to_global(b[0]))
+		if b[1] == Blocks.FIRE:
+			pass
+		elif world.vget(p) == Blocks.AIR:
+			world.vset(p, b[1])
+			placed += 1
+		elif k % 5 == 0:
+			world.break_fx_at(to_global(b[0]), b[1], false)
+		k += 1
+	GameState.shake.emit(minf(0.1 + placed * 0.002, 0.4))
+	Sfx.play("impact_big", global_position, -8.0, 0.1, 1.4)
+	queue_free()
 
 func crumble() -> void:
 	if _done:
