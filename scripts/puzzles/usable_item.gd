@@ -50,6 +50,16 @@ func _ready() -> void:
 	add_child(_outline)
 	if home == Vector3.ZERO:
 		home = global_position
+	# 火种：表面是一闪一闪的炭火
+	if item_id == "ember":
+		m.albedo_color = Color("5a1206")
+		m.emission = Color("ff6a1a")
+		m.emission_energy_multiplier = 2.2
+		var l := OmniLight3D.new()
+		l.light_color = Color("ff8a3d")
+		l.light_energy = 0.8
+		l.omni_range = 2.5
+		add_child(l)
 
 func _process(delta: float) -> void:
 	_t += delta

@@ -349,6 +349,118 @@ def render_greenhouse():
     for k, v in master(stems).items():
         write_ogg(k, v)
 
+# ------------------------------------------------------------------ 第二章《齿轮工坊》
+# D 调混合利底亚，108 BPM，32 小节循环。马林巴像齿轮一样咬合的八分音符、木鱼的“嘀嗒”，
+# 单簧管俏皮的主旋律，拨弦应答；明亮层是八音盒对位 + 弱音小号的短句 + 低声弦乐。
+
+def tick(vel=1.0, pitch=1.0):
+    """钟表的“嘀嗒”：很短的木质咔哒（用木鱼采样变调）"""
+    return sample("woodblock", int(72 + 12 * (pitch - 1)), 0.05, 0.12 * vel, 0.03)
+
+def render_gearworks():
+    bpm = 108
+    beat = 60 / bpm
+    bar = beat * 4
+    D = 38
+    A = [(D, "maj"), (48, "maj"), (D, "maj"), (48, "maj"),
+         (43, "maj"), (45, "m7"), (D, "sus"), (D, "7"),
+         (D, "maj"), (48, "maj"), (47, "m7"), (43, "maj"),
+         (40, "m7"), (45, "sus"), (D, "maj"), (45, "7")]
+    B = [(43, "maj7"), (45, "m7"), (47, "m7"), (48, "maj"),
+         (43, "maj7"), (45, "m7"), (40, "m7"), (45, "7"),
+         (46, "maj"), (48, "maj"), (D, "maj"), (47, "m7"),
+         (43, "maj"), (48, "maj"), (45, "sus"), (45, "7")]
+    prog = A + B
+    # 单簧管主旋律（A 段），B 段换成弱音小号 + 单簧管对答
+    ma = [
+        [(0, 0.5, 74), (0.5, 0.5, 76), (1, 0.5, 78), (1.5, 0.5, 81), (2, 1, 78), (3, 1, 74)],
+        [(0, 0.5, 76), (0.5, 0.5, 72), (1, 1, 79), (2, 1.5, 76), (3.5, 0.5, 72)],
+        [(0, 0.5, 74), (0.5, 0.5, 76), (1, 0.5, 78), (1.5, 0.5, 81), (2, 0.5, 83), (2.5, 0.5, 81), (3, 1, 78)],
+        [(0, 1.5, 79), (1.5, 0.5, 76), (2, 2, 72)],
+        [(0, 1, 79), (1, 0.5, 78), (1.5, 0.5, 79), (2, 1, 83), (3, 1, 79)],
+        [(0, 1, 81), (1, 0.5, 79), (1.5, 0.5, 76), (2, 2, 72)],
+        [(0, 0.5, 74), (0.5, 0.5, 79), (1, 1, 81), (2, 1, 79), (3, 1, 76)],
+        [(0, 2, 78), (2, 1, 72), (3, 1, 74)],
+        [(0, 0.5, 74), (0.5, 0.5, 76), (1, 0.5, 78), (1.5, 0.5, 81), (2, 1, 86), (3, 1, 81)],
+        [(0, 0.5, 79), (0.5, 0.5, 76), (1, 1, 72), (2, 1.5, 76), (3.5, 0.5, 79)],
+        [(0, 1, 78), (1, 1, 81), (2, 1, 83), (3, 1, 81)],
+        [(0, 2, 79), (2, 1, 83), (3, 1, 86)],
+        [(0, 1.5, 83), (1.5, 0.5, 81), (2, 1, 79), (3, 1, 76)],
+        [(0, 1, 81), (1, 1, 79), (2, 2, 76)],
+        [(0, 0.5, 78), (0.5, 0.5, 76), (1, 1, 74), (2, 1, 78), (3, 1, 81)],
+        [(0, 3, 79), (3, 1, 76)],
+    ]
+    mb = [
+        [(0, 1.5, 79), (1.5, 0.5, 83), (2, 2, 86)],
+        [(0, 1, 84), (1, 1, 81), (2, 2, 76)],
+        [(0, 1.5, 78), (1.5, 0.5, 81), (2, 2, 83)],
+        [(0, 1, 84), (1, 1, 79), (2, 2, 76)],
+        [(0, 1.5, 79), (1.5, 0.5, 83), (2, 2, 86)],
+        [(0, 1, 88), (1, 1, 84), (2, 2, 81)],
+        [(0, 1, 83), (1, 1, 79), (2, 1, 76), (3, 1, 79)],
+        [(0, 4, 81)],
+        [(0, 1.5, 77), (1.5, 0.5, 81), (2, 2, 86)],
+        [(0, 1.5, 84), (1.5, 0.5, 83), (2, 2, 79)],
+        [(0, 1, 78), (1, 1, 81), (2, 1, 86), (3, 1, 90)],
+        [(0, 3, 88), (3, 1, 86)],
+        [(0, 1, 83), (1, 1, 86), (2, 1, 91), (3, 1, 86)],
+        [(0, 2, 84), (2, 2, 79)],
+        [(0, 1, 81), (1, 1, 79), (2, 1, 76), (3, 1, 74)],
+        [(0, 4, 73)],
+    ]
+    loop = bar * len(prog)
+    n = int(loop * 3 * SR)
+    base = np.zeros((n, 2)); melo = np.zeros((n, 2)); brt = np.zeros((n, 2))
+    for rep in range(2):
+        t0 = rep * loop
+        for bi, (root, kind) in enumerate(prog):
+            bt = t0 + bi * bar
+            notes = chord_notes(root, kind)
+            r = root if root < 46 else root - 12
+            # --- base：跳跃的贝斯（1、2.5、3、4 拍）
+            for b, off, d, v in [(0, 0, 0.6, 0.62), (1.5, 7, 0.3, 0.45), (2, 12, 0.5, 0.5), (3, 7, 0.4, 0.45)]:
+                place(base, sample("acoustic_bass", r + off, beat * d, v, 0.08), bt + b * beat, 0.0)
+            # 马林巴：齿轮般咬合的分解和弦八分音符（两只手错开）
+            mk = voice(notes, 62, 81)
+            pat = [0, 2, 1, 3, 2, 1, 3, 2]
+            for k in range(8):
+                m = mk[pat[k] % len(mk)]
+                place(base, sample("marimba", m, 0.3, 0.30 if k % 2 == 0 else 0.22, 0.2), bt + k * beat / 2, -0.35 if k % 2 == 0 else 0.3)
+            lo = voice(notes, 50, 62)
+            for b in [0.75, 2.75]:
+                place(base, sample("marimba", lo[0], 0.25, 0.2, 0.2), bt + b * beat, 0.1)
+            # 轻鼓：底鼓 1、3；钟表嘀嗒八分（很轻，左右交替）
+            for b, v in [(0, 0.5), (2, 0.42), (3.5, 0.2)]:
+                place(base, soft_kick(v), bt + b * beat, 0.0)
+            for k in range(8):
+                place(base, tick(0.9 if k % 2 == 0 else 0.55, 1.0 if k % 2 == 0 else 1.25), bt + k * beat / 2, 0.45 if k % 2 == 0 else -0.45)
+            # --- melody：单簧管（A 段）/ 弱音小号（B 段），拨弦在反拍应答
+            if bi < 16:
+                for (b, d, m) in ma[bi]:
+                    place(melo, sample("clarinet", m - 12 if m > 84 else m, d * beat * 0.95, 0.42, 0.12), bt + b * beat, 0.1)
+            else:
+                for (b, d, m) in mb[bi - 16]:
+                    place(melo, sample("muted_trumpet", m - 12, d * beat * 0.92, 0.36, 0.1), bt + b * beat, 0.15)
+            pz = voice(notes, 67, 79)
+            for k, b in enumerate([0.5, 1.5, 2.5, 3.5]):
+                place(melo, sample("pizzicato_strings", pz[k % len(pz)], 0.3, 0.28, 0.2), bt + b * beat, -0.45)
+            # --- bright：八音盒对位（高八度的碎音）+ 低声弦乐
+            if bi % 2 == 1:
+                mbx = voice(notes, 79, 96)
+                for k, m in enumerate(mbx + mbx[:1]):
+                    place(brt, sample("music_box", m, 0.6, 0.26, 0.8), bt + (k * 0.5 + 2) * beat, 0.35)
+            for m in voice(notes, 57, 72):
+                place(brt, sample("string_ensemble_1", m, bar * 1.02, 0.16, 1.0), bt - 0.15 if bt > 0.3 else bt, rng.uniform(-0.5, 0.5))
+            if bi >= 16:
+                for (b, d, m) in ma[bi - 16][:3]:
+                    place(brt, sample("clarinet", m - 5, d * beat, 0.2, 0.1), bt + b * beat + beat * 2, -0.3)
+    stems = {}
+    for name, buf, wet, gain in (("gw_base", base, 0.16, 0.45), ("gw_melody", melo, 0.26, 1.8), ("gw_bright", brt, 0.35, 1.0)):
+        x = reverb(hp(buf, 30), wet) * gain
+        stems[name] = loopify(x, loop)
+    for k, v in master(stems).items():
+        write_ogg(k, v)
+
 # ------------------------------------------------------------------ 开场 CG 配乐（一次性，不循环）
 # 时间轴和开场镜头对齐：
 #   0–7   太空里的伊甸-7：安静、辽阔
@@ -472,6 +584,8 @@ if __name__ == "__main__":
         render_title()
     if what in ("all", "gh"):
         render_greenhouse()
+    if what in ("all", "gw"):
+        render_gearworks()
     if what in ("all", "intro"):
         render_intro()
         render_impact_sfx()

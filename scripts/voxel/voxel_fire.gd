@@ -25,13 +25,31 @@ var _crackle_t := 0.0
 signal exploded(pos: Vector3)
 
 func _ready() -> void:
-	_particles = _make_particles(Color("ffb347"), Color("ff4a1c"), 0.1, 0.7, 2.2)
-	_smoke = _make_particles(Color(0.35, 0.33, 0.32, 0.45), Color(0.5, 0.5, 0.5, 0.0), 0.22, 1.6, 1.4)
+	_particles = _make_particles(Color(1.0, 0.72, 0.3, 1.0), Color(0.9, 0.2, 0.05, 0.0), 0.28, 0.6, 2.0)
+	_smoke = _make_particles(Color(0.3, 0.28, 0.27, 0.35), Color(0.5, 0.5, 0.5, 0.0), 0.5, 1.8, 1.2)
 	_light = OmniLight3D.new()
 	_light.light_color = Color("ff8a3d")
 	_light.light_energy = 0.0
 	_light.omni_range = 6.0
 	add_child(_light)
+
+static var _dot: GradientTexture2D
+
+## 圆形柔边的粒子贴图（火苗、烟）
+static func _soft_dot() -> GradientTexture2D:
+	if _dot == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.set_color(1, Color(1, 1, 1, 0))
+		g.add_point(0.45, Color(1, 1, 1, 0.6))
+		_dot = GradientTexture2D.new()
+		_dot.gradient = g
+		_dot.fill = GradientTexture2D.FILL_RADIAL
+		_dot.fill_from = Vector2(0.5, 0.5)
+		_dot.fill_to = Vector2(1.0, 0.5)
+		_dot.width = 64
+		_dot.height = 64
+	return _dot
 
 func _make_particles(c0: Color, c1: Color, size: float, life: float, speed: float) -> CPUParticles3D:
 	var ps := CPUParticles3D.new()
@@ -52,6 +70,9 @@ func _make_particles(c0: Color, c1: Color, size: float, life: float, speed: floa
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.vertex_color_use_as_albedo = true
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.albedo_texture = _soft_dot()
+	if c0.a > 0.9:
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.material = mat
 	ps.mesh = m
 	var g := Gradient.new()

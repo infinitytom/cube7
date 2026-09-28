@@ -156,6 +156,25 @@ func _flatten(x0: int, z0: int, x1: int, z1: int, h: int, top := Blocks.GRASS) -
 			_set_h(x, z, h)
 			_column(x, z, h, 10 + (h - G), top)
 
+## 枯荆棘不是一堵平墙：在外面再乱长一圈细枝（体素级的噪声），顶上参差不齐
+func _bramble_fuzz(a: Vector3i, b: Vector3i) -> void:
+	var C := VoxelWorld.CELL
+	var n := FastNoiseLite.new()
+	n.seed = 311
+	n.frequency = 0.45
+	for z in range(a.z * C - 1, (b.z + 1) * C + 1):
+		for y in range(a.y * C, (b.y + 1) * C + 3):
+			for x in range(a.x * C - 2, (b.x + 1) * C + 2):
+				var p := Vector3i(x, y, z)
+				var inside := x >= a.x * C and x < (b.x + 1) * C and y < (b.y + 1) * C and z >= a.z * C and z < (b.z + 1) * C
+				var v := n.get_noise_3d(x, y, z)
+				if inside:
+					# 核心里留几个小空洞（从缝里能看到枝条的层次），但不会通透
+					if v > 0.55 and (x == a.x * C or x == (b.x + 1) * C - 1):
+						world.vset_raw(p, Blocks.AIR)
+				elif world.vget(p) == Blocks.AIR and v > 0.1 - (0.25 if y < (b.y + 1) * C else 0.0):
+					world.vset_raw(p, Blocks.BRAMBLE)
+
 ## 把地表换成某种铺装（只换最上面一格）
 func _pave(x0: int, z0: int, x1: int, z1: int, t: int) -> void:
 	for z in range(z0, z1 + 1):
@@ -193,6 +212,7 @@ func _barricade() -> void:
 		if h_at(BARRICADE_X, z) < 0 and h_at(BARRICADE_X + 1, z) < 0:
 			continue
 		world.fill_box(Vector3i(BARRICADE_X, G, z), Vector3i(BARRICADE_X + 1, G + 3, z), Blocks.BRAMBLE)
+		_bramble_fuzz(Vector3i(BARRICADE_X, G, z), Vector3i(BARRICADE_X + 1, G + 3, z))
 	# 路障前后铺路，免得草地一直烧过去
 	_pave(BARRICADE_X - 3, 60, BARRICADE_X + 4, 91, Blocks.PAVING)
 
@@ -269,12 +289,13 @@ func _yard() -> void:
 	for l in [Vector3i(62, G, 70), Vector3i(62, G, 62), Vector3i(72, G, 54), Vector3i(80, G, 56)]:
 		lamp_post(l)
 	# 厂区东南的枯荆棘小花园（里面封着一个种子方块）
-	var gc := Vector3i(63, G, 81)
+	var gc := Vector3i(64, G, 81)
 	for z in range(gc.z - 2, gc.z + 3):
 		for x in range(gc.x - 2, gc.x + 3):
 			if absi(x - gc.x) == 2 or absi(z - gc.z) == 2:
 				if h_at(x, z) >= 0:
 					world.fill_box(Vector3i(x, G, z), Vector3i(x, G + 2, z), Blocks.BRAMBLE)
+					_bramble_fuzz(Vector3i(x, G, z), Vector3i(x, G + 2, z))
 	_brazier(Vector3i(64, G, 72))
 
 # ================================================================ D 厂房
@@ -464,7 +485,7 @@ func _logic() -> void:
 	_enemy_at(Vector3i(74, G, 79))
 	# 种子方块
 	_seed_at("gw_s1", Vector3i(9, G, 80), 0)
-	_seed_at("gw_s2", Vector3i(63, G, 81), 1)
+	_seed_at("gw_s2", Vector3i(64, G, 81), 1)
 	_seed_at("gw_s3", Vector3i(93, WALK_Y + 3, 67), 2)
 	# 记忆碎片
 	_fragment("gw_1", Vector3i(16, G, 72), "艾拉·林，研究日志 #40：齿轮工坊的老师傅们不信“体素态”。我把一台车床拆成方块又拼回去，他们围着它转了一下午。")

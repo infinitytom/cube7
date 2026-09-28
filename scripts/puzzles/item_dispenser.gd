@@ -10,17 +10,17 @@ var item: UsableItem
 var _t := 0.0
 
 func _ready() -> void:
-	_spawn()
+	# 等放置者设好位置再生成第一个
+	_spawn.call_deferred()
 
 func _spawn() -> void:
 	item = UsableItem.new()
 	item.item_id = item_id
 	item.color = color
+	item.home = global_position
+	# 先摆好位置再加进场景（否则第一帧在原点，会被当成“掉出世界”）
+	item.transform = Transform3D(Basis(), get_parent().to_local(global_position) if get_parent() is Node3D else global_position)
 	get_parent().add_child.call_deferred(item)
-	await get_tree().process_frame
-	if is_instance_valid(item):
-		item.global_position = global_position
-		item.home = global_position
 
 func _physics_process(delta: float) -> void:
 	if is_instance_valid(item):

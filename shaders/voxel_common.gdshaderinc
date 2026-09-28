@@ -96,7 +96,7 @@ vec3 voxel_albedo(vec3 base, float light, vec2 uv) {
 	//   松软（砂、松土）：细碎的颗粒点
 	//   打不坏：更暗一点、边缘更硬朗
 	float ei = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-	bool foliage = abs(v_type - 22.0) < 0.5 || v_type > 33.5 && v_type < 35.5;
+	bool foliage = abs(v_type - 22.0) < 0.5 || v_type > 33.5 && v_type < 35.5 || abs(v_type - 43.0) < 0.5;
 	if (foliage) {
 		// 树叶：一簇一簇的明暗，不画箱板
 		col *= 0.82 + 0.3 * vnoise(v_wpos * 3.3) + 0.08 * n3;

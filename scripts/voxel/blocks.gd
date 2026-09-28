@@ -59,7 +59,7 @@ const DEFS := {
 	REINFORCED: {"name": "加固墙", "color": Color("6c7385"), "impact": 16.0},
 	SCAFFOLD: {"name": "木脚手架", "color": Color("c89a5b"), "impact": 5.0, "drill": true, "burn": 2.5},
 	VENT: {"name": "熔炉口", "color": Color("ffb347"), "render": Render.GLOW, "ignites": true},
-	BRAMBLE: {"name": "枯荆棘", "color": Color("7a5a6e"), "burn": 1.4},
+	BRAMBLE: {"name": "枯荆棘", "color": Color("6e5646"), "burn": 1.4},
 	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1, "burn": 2.5},
 }
 

@@ -539,6 +539,15 @@ func put_tree(root: Vector3i, trunk_h: int, crown_r: float, kind: String, rng: R
 func ir_of(r: float) -> int:
 	return int(ceil(r)) + 3
 
+## 搭建用：直接写一个体素（不发信号，稍后统一重建）
+func vset_raw(p: Vector3i, t: int) -> void:
+	if not vin(p):
+		return
+	var i := p.x + size.x * (p.y + size.y * p.z)
+	data[i] = t
+	shapes[i] = 0
+	_dirty[Vector3i(p.x >> 3, p.y >> 3, p.z >> 3)] = true
+
 func _put(p: Vector3i, t: int) -> void:
 	if not vin(p):
 		return
@@ -654,32 +663,39 @@ func detach_floating(around: Array[Vector3i]) -> void:
 func _detachable(t: int) -> bool:
 	return t != Blocks.AIR and t != Blocks.FIRE and Blocks.falls[t] == 0 and (Blocks.impact[t] >= 0.0 or Blocks.drill[t] == 1)
 
-## 从 start 出发找连通块；有支撑返回空数组
+## 从 start 出发找连通块；有支撑返回空数组。
+## “支撑”要够结实：一大块东西只靠一两根细木头连着固定的方块，也会被压塌（ANCHOR_WEIGHT 个体素 / 每个接触面）
+const ANCHOR_WEIGHT := 90
+
 func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
 	var out: Array[Vector3i] = []
 	var queue: Array[Vector3i] = [start]
 	var seen := {start: true}
+	var anchors := 0
 	var supported := false
+	if not _detachable(vget(start)):
+		return out
 	while not queue.is_empty():
 		var q: Vector3i = queue.pop_back()
-		var t := vget(q)
-		if t == Blocks.AIR:
-			continue
-		if not _detachable(t):
-			supported = true
-			break
 		out.append(q)
 		if out.size() > DETACH_LIMIT or q.y <= 0:
 			supported = true
 			break
 		for dd in DIRS:
 			var n: Vector3i = q + dd
-			if not seen.has(n) and vget(n) != Blocks.AIR:
-				seen[n] = true
-				queue.append(n)
+			if seen.has(n):
+				continue
+			var nt := vget(n)
+			if nt == Blocks.AIR:
+				continue
+			if not _detachable(nt):
+				anchors += 1
+				continue
+			seen[n] = true
+			queue.append(n)
 	for q in out:
 		checked[q] = true
-	if supported:
+	if supported or anchors * ANCHOR_WEIGHT >= out.size():
 		return []
 	return out
 

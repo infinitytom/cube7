@@ -47,6 +47,19 @@ func aerial(name: String, from: Vector3, to: Vector3, wait := 1.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.5).timeout
+	if main.level is AreaGearworks:
+		var G := AreaGearworks.G
+		await aerial("g00_overview", Vector3(-10, 70, 140), Vector3(60, 22, 64), 3.0)
+		await aerial("g01_dock", Vector3(2, 34, 96), Vector3(26, 22, 76), 1.0)
+		await aerial("g02_chasm", Vector3(36, 32, 92), Vector3(54, 22, 76), 1.0)
+		await aerial("g03_yard", Vector3(56, 40, 36), Vector3(78, 22, 62), 1.0)
+		await aerial("g04_hall", Vector3(64, 44, 90), Vector3(80, 22, 66), 1.0)
+		await aerial("g05_catwalk", Vector3(84, 42, 76), Vector3(104, 32, 60), 1.0)
+		await shot("g06_barricade", Vector3i(24, G, 76), -PI / 2.0 + 0.2, -0.25, false, 2.0)
+		W.fire.ignite_sphere(W.voxel_center(Vector3i(30, G + 1, 77)), 1.0)
+		await shot("g07_fire", Vector3i(25, G, 77), -PI / 2.0 + 0.15, -0.2, false, 3.0)
+		get_tree().quit()
+		return
 	if main.level is AreaGreenhouse and OS.get_cmdline_user_args().has("--quick"):
 		var G := AreaGreenhouse.G
 		await aerial("q00_overview", Vector3(-15, 55, 120), Vector3(55, 18, 55), 2.5)
