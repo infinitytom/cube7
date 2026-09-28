@@ -154,3 +154,125 @@ func scatter_decor(region_lo: Vector3i, region_hi: Vector3i, grass_rate: float, 
 					elif roll < flower_rate + grass_rate:
 						decor.add("grass", Vector3i(x, y, z), rng)
 				break
+
+# ================================================================ 破坏与重构
+
+## 重构波：塔点亮时，一道光环从 center 扩散出去，沿途被砸烂的地形一块块飞回原位
+func reconstruct(center: Vector3, radius := 80.0, dur := 7.0) -> int:
+	var n := world.restore_wave(center, radius, dur)
+	for k in 2:
+		var mi := MeshInstance3D.new()
+		var t := TorusMesh.new()
+		t.inner_radius = 0.985
+		t.outer_radius = 1.0
+		t.rings = 96
+		t.ring_segments = 6
+		mi.mesh = t
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.albedo_color = Color(0.45, 1.0, 0.85, 0.9)
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		mi.global_position = center
+		mi.scale = Vector3(1.0, 6.0, 1.0)
+		var tw := mi.create_tween().set_parallel()
+		tw.tween_interval(k * 0.5)
+		tw.chain().tween_property(mi, "scale", Vector3(radius, 30.0, radius), dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(m, "albedo_color:a", 0.0, dur)
+		tw.chain().tween_callback(mi.queue_free)
+	Sfx.play("rebuild_done", Vector3.INF, -2.0, 0.0, 0.85)
+	GameState.shake.emit(0.3)
+	if n > 0:
+		get_tree().create_timer(2.5).timeout.connect(func() -> void:
+			var p := GameState.player as Node3D
+			if p:
+				FloatText.spawn(self, p.global_position + Vector3.UP * 1.5, "重构波：%d 块地形回到原位" % n, Color("9dffcf"), 44, 2.0))
+	return n
+
+## 重构点 · 螺旋瞭望台：在 (x, z) 附近找块平地放蓝图，建好以后顶上出现宝箱
+func rebuild_tower(id: String, x: int, z: int, cost: int, h := 12, chest := {}) -> RebuildSite:
+	var base := _find_site(x, z, h + 3)
+	if base.x < 0:
+		push_warning("重构点 %s 找不到平地" % id)
+		return null
+	var res := RebuildSite.tower(base, h)
+	# 地基：塔脚下低一格的地方补平
+	var found: Array = []
+	for oz in range(-3, 7):
+		for ox in range(-6, 7):
+			var c := base + Vector3i(ox, -1, oz)
+			if world.get_block(c) == Blocks.AIR:
+				found.append([c, Blocks.PAVING, 0])
+	res[0] = found + res[0]
+	var site := RebuildSite.new()
+	site.set_meta("base", base)
+	site.clear_a = base + Vector3i(-6, 0, -3)
+	site.clear_b = base + Vector3i(6, 5, 6)
+	site.world = world
+	site.site_id = id
+	site.title = "瞭望台"
+	site.cost = cost
+	site.blueprint = res[0]
+	site.pad_cell = base + Vector3i(-5, 0, 1)
+	var top: Vector3i = res[1]
+	site.rebuilt.connect(func() -> void:
+		var c := top
+		var props := {"chest_id": "rb_" + id, "coins": 20, "energy": 3, "line": "瞭望台顶上的宝箱！从这儿看得好远。"}
+		props.merge(chest, true)
+		zone(TreasureChest, c, c, props))
+	add_child(site)
+	return site
+
+## 重构点 · 桥
+func rebuild_bridge(id: String, a: Vector3i, b: Vector3i, cost: int, pad: Vector3i, title := "断桥") -> RebuildSite:
+	var res := RebuildSite.bridge(a, b)
+	var site := RebuildSite.new()
+	site.world = world
+	site.site_id = id
+	site.title = title
+	site.cost = cost
+	site.blueprint = res[0]
+	site.pad_cell = pad
+	add_child(site)
+	return site
+
+## 找一块平地（塔 10×10 + 西边的光圈）：地面高低差不超过 1 格（矮的地方重建时补地基），
+## 零星的小石头、灌木（最多 16 列、不超过 4 格高）重建时会被清掉
+func _find_site(x: int, z: int, clear: int) -> Vector3i:
+	for r in range(0, 15):
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dz)) != r:
+					continue
+				var cx := x + dx
+				var cz := z + dz
+				var h := surface_y(cx, cz)
+				if h < 0:
+					continue
+				var ok := true
+				var bumps := 0
+				for oz in range(-3, 7):
+					if not ok:
+						break
+					for ox in range(-6, 7):
+						var sy := surface_y(cx + ox, cz + oz)
+						if sy == h or sy == h - 1:
+							continue
+						if sy > h and sy <= h + 4 and world.get_block(Vector3i(cx + ox, h - 1, cz + oz)) != Blocks.AIR:
+							bumps += 1
+							if bumps <= 16:
+								continue
+						ok = false
+						break
+				if ok:
+					for oz in range(-3, 7):
+						for ox in range(-6, 7):
+							for y in range(h + 5, h + clear):
+								if world.get_block(Vector3i(cx + ox, y, cz + oz)) != Blocks.AIR:
+									ok = false
+				if ok:
+					return Vector3i(cx, h, cz)
+	return Vector3i(-1, -1, -1)

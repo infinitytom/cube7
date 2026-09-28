@@ -16,17 +16,18 @@ enum {
 enum Render { NONE, OPAQUE, GLASS, GLOW }
 
 ## impact：撞击破坏所需的最低速度（m/s），< 0 表示撞不碎
+##   地形分三档（v0.9 破坏感）：草/土/苔/木板 ≈ 冲刺就碎；锈铁/铺路石 ≈ 蓄力冲刺才碎；岩石/崖壁/深渊岩/合金 = 地基，撞不碎
 ## drill：钻头能否破坏
 ## coins / energy：破坏后自动吸入的掉落
 ## item：破坏后留在场上的“可用物件”（只有它会保留）
 const DEFS := {
 	BEDROCK: {"name": "外星合金", "color": Color("4a4f63"), "render": Render.OPAQUE},
-	GRASS: {"name": "草地", "color": Color("6cae4f"), "drill": true, "burn": 0.8, "burn_to": DIRT, "catch": 0.08},
-	DIRT: {"name": "泥土", "color": Color("8b5e3c"), "drill": true},
+	GRASS: {"name": "草地", "color": Color("6cae4f"), "drill": true, "burn": 0.8, "burn_to": DIRT, "catch": 0.08, "impact": 10.5},
+	DIRT: {"name": "泥土", "color": Color("8b5e3c"), "drill": true, "impact": 10.5},
 	SAND: {"name": "砂", "color": Color("e2c58f"), "impact": 2.5, "drill": true, "falls": true, "soft": true},
 	GLASS: {"name": "玻璃", "color": Color("b9e3f5"), "impact": 7.5, "drill": true, "render": Render.GLASS},
 	ROCK: {"name": "岩石", "color": Color("8a8f98"), "drill": true},
-	ORE: {"name": "金矿", "color": Color("e0ad3a"), "drill": true, "coins": 5},
+	ORE: {"name": "金矿", "color": Color("e0ad3a"), "drill": true, "coins": 5, "impact": 10.5},
 	METAL: {"name": "金属", "color": Color("a9b2bd"), "conductive": true},
 	CRYSTAL: {"name": "能量水晶", "color": Color("6fe3ff"), "render": Render.GLOW, "conductive": true},
 	CRATE: {"name": "补给箱", "color": Color("b8773f"), "impact": 2.0, "drill": true, "coins": 1, "energy": 1, "burn": 2.5},
@@ -40,16 +41,16 @@ const DEFS := {
 	TRACK: {"name": "平衡轨道", "color": Color("c98a5e")},
 	GOAL: {"name": "终点信标", "color": Color("ffd84d"), "render": Render.GLOW},
 	PLATE: {"name": "压力板", "color": Color("e38b3a")},
-	WOOD: {"name": "木头", "color": Color("7a4f31"), "drill": true, "burn": 5.0, "catch": 0.5},
+	WOOD: {"name": "木头", "color": Color("7a4f31"), "drill": true, "burn": 5.0, "catch": 0.5, "impact": 11.0},
 	LEAVES: {"name": "树叶", "color": Color("4d9444"), "impact": 1.5, "drill": true, "burn": 1.2},
-	GEODE: {"name": "晶洞", "color": Color("8a63d2"), "drill": true, "item": "crystal", "energy": 2},
+	GEODE: {"name": "晶洞", "color": Color("8a63d2"), "drill": true, "item": "crystal", "energy": 2, "impact": 10.5},
 	HULL: {"name": "飞船外壳", "color": Color("e9edf2")},
 	CLIFF: {"name": "悬崖岩", "color": Color("b3896a")},
-	PAVING: {"name": "铺路石", "color": Color("cfc6b4")},
-	MOSS: {"name": "苔石", "color": Color("6f8f4c")},
+	PAVING: {"name": "铺路石", "color": Color("cfc6b4"), "impact": 13.0},
+	MOSS: {"name": "苔石", "color": Color("6f8f4c"), "impact": 10.5},
 	LAMP: {"name": "灯", "color": Color("fff0b0"), "render": Render.GLOW},
 	HULL_DARK: {"name": "飞船舱体", "color": Color("3d4659")},
-	LOOSE: {"name": "松土", "color": Color("9a6a48"), "drill": true, "soft": true},
+	LOOSE: {"name": "松土", "color": Color("9a6a48"), "drill": true, "soft": true, "impact": 8.0},
 	CLIFF_B: {"name": "悬崖岩（深层）", "color": Color("96735a")},
 	CLIFF_C: {"name": "悬崖岩（灰层）", "color": Color("7f6f64")},
 	PINE: {"name": "松针", "color": Color("2f6e45"), "impact": 1.5, "drill": true, "burn": 1.2},
@@ -62,8 +63,8 @@ const DEFS := {
 	SCAFFOLD: {"name": "木脚手架", "color": Color("c89a5b"), "impact": 5.0, "drill": true, "burn": 2.5},
 	VENT: {"name": "熔炉口", "color": Color("ffb347"), "render": Render.GLOW, "ignites": true},
 	BRAMBLE: {"name": "枯荆棘", "color": Color("6e5646"), "burn": 1.4},
-	PLANK: {"name": "木板", "color": Color("d9a066"), "drill": true, "burn": 3.0, "catch": 0.3},
-	RUST: {"name": "锈铁", "color": Color("b5653e"), "drill": true},
+	PLANK: {"name": "木板", "color": Color("d9a066"), "drill": true, "burn": 3.0, "catch": 0.3, "impact": 9.0},
+	RUST: {"name": "锈铁", "color": Color("b5653e"), "drill": true, "impact": 12.5},
 	CRUMBLE: {"name": "碎裂石板", "color": Color("cdb89c"), "impact": 3.0, "drill": true},
 	GEM_CHAIN: {"name": "共鸣晶簇", "color": Color("c08cff"), "render": Render.GLOW, "impact": 3.0, "drill": true, "chain": true, "coins": 1},
 	LENS: {"name": "受光晶", "color": Color("7fb8d0")},

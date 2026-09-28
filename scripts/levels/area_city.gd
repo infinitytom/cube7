@@ -471,6 +471,8 @@ func _logic() -> void:
 	objective(5, "去议会广场", Vector3i(D_C.x + 10, GD, D_C.y), Vector3i(HUB.x - 3, GD, HUB.y - 3), Vector3i(HUB.x + 3, GD + 4, HUB.y + 3))
 	_setup_boss()
 	coin_line(Vector3i(A_C.x - 6, GA, A_C.y + 2), Vector3i(A_C.x + 4, GA, A_C.y - 1), 5)
+	# 重构点：议会广场上的纪念塔——建好以后，塔顶正好在巡逻艇的航线下面（也能从塔顶跳上去撞它）
+	rebuild_tower("cc_t3", D_C.x, D_C.y + 20, 250, 16, {"coins": 60, "energy": 8, "line": "纪念塔顶上的宝箱！整座城都在脚下。"})
 	coin_line(Vector3i(C_C.x - 8, GC, C_C.y - 10), Vector3i(C_C.x - 1, GC, C_C.y - 12), 4)
 
 var _mill: Node3D
@@ -521,6 +523,7 @@ func _light_spire(instant: bool) -> void:
 	world.set_block(top, Blocks.RECEIVER_ON)
 	tower_beam(top)
 	if not instant:
+		reconstruct(world.voxel_center(Vector3i(D_C.x, GD, D_C.y)), 130.0, 9.0)
 		GameState.say("巡逻艇掉下去了！……议会尖塔亮了。去大厦门口吧。")
 		Sfx.play("bridge", Vector3.INF, -2.0, 0.0)
 	var goal := zone(Goal, Vector3i(D_C.x - 4, GD, D_C.y - 12), Vector3i(D_C.x + 4, GD + 4, D_C.y - 9)) as Goal

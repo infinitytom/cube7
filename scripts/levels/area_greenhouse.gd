@@ -1028,6 +1028,9 @@ func _logic() -> void:
 	])
 	_fragment("gh_1", deck_cell + Vector3i(-2, 0, 0), {"log_text": "艾拉·林，研究日志 #12：方舟引擎第一次成功——一块岩石被拆成方块，又被原样拼了回来。它摸起来还是暖的。"})
 	coin_line(Vector3i(20, G - 2, 74), Vector3i(24, G - 1, 74), 3)
+	# 重构点：花园里的旧瞭望台、锈蚀营地边的哨塔
+	rebuild_tower("gh_t1", 38, 66, 120)
+	rebuild_tower("gh_t2", 28, 112, 240, 14, {"coins": 30, "energy": 5})
 	coin_line(Vector3i(29, G, 74), Vector3i(44, G, 74), 6)
 	coin_line(Vector3i(33, G, 64), Vector3i(33, G, 67), 2)
 	# C
@@ -1241,6 +1244,7 @@ func _build_bridge(instant := false) -> void:
 		_tower_on()
 		return
 	_tower_on()
+	reconstruct(world.voxel_center(Vector3i(TOWER_TOP.x, G + 2, TOWER_TOP.z)), 90.0)
 	GameState.say("第一座重构塔……重新上线了！光桥正在展开——终点浮岛上是这片群岛的引擎节点。")
 	GameState.set_objective(9, "沿光桥登上终点浮岛", _v(Vector3i(104, G + 11, 81)))
 	SaveGame.set_flag("gh_bridge")

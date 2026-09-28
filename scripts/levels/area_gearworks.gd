@@ -607,6 +607,7 @@ func _on_boss_defeated(_e: Node) -> void:
 	SaveGame.set_flag("gw_boss")
 	Music.play_area("gw")
 	Music.set_override("")
+	reconstruct(world.voxel_center(TOWER), 90.0)
 	GameState.say("熔炉守卫停下来了……它身上的锈在剥落。等星球重构好，它会醒过来，变回那个爱唠叨的老总管。")
 	GameState.set_objective(10, "点亮第二座重构塔", _v(TOWER + Vector3i(-3, 1, 0)))
 	_make_goal()
@@ -759,6 +760,9 @@ func _logic() -> void:
 	zone(MusicZone, Vector3i(26, G - 2, 60), Vector3i(60, G + 6, 92), {"state": "puzzle"})
 	zone(MusicZone, Vector3i(60, G - 2, 38), Vector3i(98, G + 6, 60), {"state": "puzzle"})
 	coin_line(Vector3i(19, G, 77), Vector3i(27, G, 77), 4)
+	# 重构点：停机坪的信号塔、储料场的吊塔
+	rebuild_tower("gw_t1", 12, 70, 150)
+	rebuild_tower("gw_t2", 90, 47, 300, 14, {"coins": 35, "energy": 5})
 	coin_line(Vector3i(34, G, 77), Vector3i(44, G, 77), 5)
 	coin_line(Vector3i(61, G, 76), Vector3i(61, G, 66), 4)
 	coin_line(Vector3i(88, WALK_Y + 1, 61), Vector3i(94, WALK_Y + 1, 61), 4)

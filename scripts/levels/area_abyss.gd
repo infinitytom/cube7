@@ -522,6 +522,9 @@ func _logic() -> void:
 	world.fill_box(fp + Vector3i(0, -3, 0), fp + Vector3i(0, -4, 0), Blocks.GEODE)
 	seed_at("ab_s4", fp, 3)
 	# 记忆碎片
+	# 重构点：坑沿上的观测塔、第二层的矿工哨塔
+	rebuild_tower("ab_t1", 22, 44, 150)
+	rebuild_tower("ab_t2", 34, 90, 300, 14, {"coins": 35, "energy": 5})
 	fragment("ab_1", Vector3i(22, TOP, 66), "艾拉·林，研究日志 #77：矿层里的晶体会“记住”光。我想，方块也会记住自己原来的样子吧。")
 	fragment("ab_2", Vector3i(47, L1, 76), "艾拉·林，研究日志 #305：我在引擎里留了一个后门——如果重构失败，我可以自己进去修。这件事我没告诉任何人。")
 	fragment("ab_3", Vector3i(110, L2, 66), "艾拉·林，研究日志 #410：第十年的风暴模拟跑了一千次。九百次，我们都来不及。……那剩下的一百次呢？")
@@ -634,6 +637,7 @@ func _on_boss_defeated(_e: Node) -> void:
 	Music.set_override("")
 	GameState.say("巨像倒下了……看，坑底中央在震动——第三座重构塔要升起来了！")
 	_raise_tower(false)
+	reconstruct(world.voxel_center(Vector3i(C.x, FLOOR, C.y)), 100.0)
 
 ## 重构塔从坑底中央一层层升起来，光柱冲出天坑
 func _raise_tower(instant: bool) -> void:

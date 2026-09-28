@@ -102,6 +102,8 @@ func _shader_mat(path: String) -> ShaderMaterial:
 ## 关卡开始时调用：按新尺寸清空世界
 ## new_size 按“格”计
 func setup(new_size: Vector3i) -> void:
+	track_damage = false
+	damage.clear()
 	for c in _chunks.values():
 		(c["mesh"] as Node).queue_free()
 	_chunks.clear()
@@ -563,6 +565,52 @@ func flush_dirty() -> void:
 	_dirty.clear()
 	_commit_groups()
 
+# ---------------------------------------------------------------- 破坏记录与重构
+
+## 关卡搭好以后打开：记下 PIX 砸掉的每一个地形体素（原来是什么），重构塔点亮时让它们飞回原位
+var track_damage := false
+var damage := {}
+
+const RESTORABLE := [Blocks.GRASS, Blocks.DIRT, Blocks.SAND, Blocks.ROCK, Blocks.MOSS, Blocks.LOOSE, Blocks.PLANK, Blocks.WOOD,
+	Blocks.LEAVES, Blocks.PINE, Blocks.BLOSSOM, Blocks.ORE, Blocks.GEODE, Blocks.RUST, Blocks.PAVING, Blocks.CLIFF, Blocks.CLIFF_B,
+	Blocks.CLIFF_C, Blocks.GLOWSHROOM, Blocks.DARKROCK, Blocks.DARKROCK_B, Blocks.TILE, Blocks.HULL, Blocks.HULL_DARK]
+
+func log_damage(p: Vector3i, t: int) -> void:
+	if track_damage and not damage.has(p) and t in RESTORABLE:
+		damage[p] = t
+
+## 重构波：以 center 为圆心，radius 米以内被砸掉的地形在 dur 秒内由近到远一格格飞回来。返回飞回来的块数
+func restore_wave(center: Vector3, radius: float, dur: float, from_below := true) -> int:
+	# 按 0.5 米的格分组：一格一个飞行方块，落地时写回这一格里所有被砸掉的体素
+	var cells := {}
+	for p: Vector3i in damage.keys():
+		var w := vcenter(p)
+		if w.distance_to(center) > radius:
+			continue
+		if vget(p) != Blocks.AIR:
+			damage.erase(p)
+			continue
+		var c := Vector3i(p.x >> 1, p.y >> 1, p.z >> 1)
+		if not cells.has(c):
+			cells[c] = []
+		(cells[c] as Array).append([p, damage[p]])
+	if cells.is_empty():
+		return 0
+	var rb := VoxelRebuilder.new()
+	rb.world = self
+	add_child(rb)
+	var keys := cells.keys()
+	var dists := {}
+	for c: Vector3i in keys:
+		dists[c] = voxel_center(c).distance_to(center)
+	keys.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return dists[a] < dists[b])
+	for c: Vector3i in keys:
+		var to := voxel_center(c)
+		var d: float = dists[c]
+		var from := to + (Vector3(_rng.randf_range(-1.5, 1.5), -6.0, _rng.randf_range(-1.5, 1.5)) if from_below else (to - center).normalized() * 4.0 + Vector3.UP * 3.0)
+		rb.add(cells[c], to, from, d / maxf(radius, 1.0) * dur + _rng.randf_range(0.0, 0.25), _rng.randf_range(0.5, 0.8))
+	return keys.size()
+
 # ---------------------------------------------------------------- 破坏
 
 ## tool: "impact"（撞击，power = 速度）或 "drill"（钻头）
@@ -570,6 +618,7 @@ func vbreak(p: Vector3i, tool: String, power: float, fx := true) -> bool:
 	var t := vget(p)
 	if not Blocks.can_break(t, tool, power):
 		return false
+	log_damage(p, t)
 	vset(p, Blocks.AIR)
 	if _first_hit(p):
 		GameState.blocks_broken += 1
@@ -590,6 +639,7 @@ func _chain_from(p: Vector3i, t: int) -> void:
 		for d in DIRS:
 			var q: Vector3i = p + d
 			if vget(q) == t:
+				log_damage(q, t)
 				vset(q, Blocks.AIR)
 				_spawn_break_fx(q, t)
 				if _first_hit(q):
@@ -612,7 +662,8 @@ func vbreak_any(p: Vector3i) -> void:
 ##   · 沿撞击方向拉长，撞得越狠坑越深
 ##   · 坑外一圈的方块有一定概率被震裂
 ##   · 破坏后和大地断开的小碎块会整块掉落、翻滚、落地再碎
-func break_sphere(center: Vector3, radius: float, tool: String, power: float, dir := Vector3.ZERO, soft_only := false) -> int:
+## min_y：低于这个高度（世界坐标）的体素不破坏——横着撞墙时不把脚下的地面一起啃掉
+func break_sphere(center: Vector3, radius: float, tool: String, power: float, dir := Vector3.ZERO, soft_only := false, min_y := -INF) -> int:
 	var c := to_v(center)
 	var r := int(ceil(radius * 1.35 / VOXEL))
 	var count := 0
@@ -625,7 +676,10 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 				var bt := vget(p)
 				if bt == Blocks.AIR or (soft_only and Blocks.soft[bt] == 0 and bt != Blocks.COPPER):
 					continue
-				var off := vcenter(p) - center
+				var vc := vcenter(p)
+				if vc.y < min_y:
+					continue
+				var off := vc - center
 				# 沿撞击方向压扁距离 → 坑沿着冲击方向更深
 				var along := off.dot(d)
 				var dist := (off - d * along).length() + absf(along) * (0.7 if along > 0.0 else 1.0)
@@ -708,6 +762,7 @@ func _spawn_chunk(cells: Array[Vector3i]) -> void:
 	for q in cells:
 		list.append([vcenter(q) - mid, vget(q)])
 	for q in cells:
+		log_damage(q, vget(q))
 		vset(q, Blocks.AIR)
 		if _first_hit(q):
 			GameState.blocks_broken += 1
@@ -777,7 +832,7 @@ func _flush_debris() -> void:
 		return
 	if _debris_mesh == null:
 		_debris_mesh = BoxMesh.new()
-		_debris_mesh.size = Vector3.ONE * 0.09
+		_debris_mesh.size = Vector3.ONE * 0.13
 		var mat := StandardMaterial3D.new()
 		mat.vertex_color_use_as_albedo = true
 		mat.roughness = 0.8
@@ -787,14 +842,14 @@ func _flush_debris() -> void:
 	ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
 	ps.emission_points = _debris_pts
 	ps.emission_colors = _debris_cols
-	ps.amount = clampi(_debris_pts.size() * 5, 6, 80)
+	ps.amount = clampi(_debris_pts.size() * 5, 6, 120)
 	ps.one_shot = true
 	ps.explosiveness = 1.0
-	ps.lifetime = 0.6
+	ps.lifetime = 0.85
 	ps.direction = Vector3.UP
 	ps.spread = 75.0
-	ps.initial_velocity_min = 2.0
-	ps.initial_velocity_max = 5.0
+	ps.initial_velocity_min = 2.5
+	ps.initial_velocity_max = 6.5
 	ps.gravity = Vector3(0, -14, 0)
 	ps.angular_velocity_min = -360.0
 	ps.angular_velocity_max = 360.0
@@ -804,9 +859,57 @@ func _flush_debris() -> void:
 	ps.local_coords = false
 	add_child(ps)
 	ps.emitting = true
-	get_tree().create_timer(0.9).timeout.connect(ps.queue_free)
+	get_tree().create_timer(1.1).timeout.connect(ps.queue_free)
+	if _debris_pts.size() >= 10:
+		_dust(_debris_pts)
 	_debris_pts = PackedVector3Array()
 	_debris_cols = PackedColorArray()
+
+## 大破坏时腾起的一团尘土
+static var _dust_mesh: SphereMesh
+func _dust(pts: PackedVector3Array) -> void:
+	if _dust_mesh == null:
+		_dust_mesh = SphereMesh.new()
+		_dust_mesh.radius = 0.35
+		_dust_mesh.height = 0.7
+		_dust_mesh.radial_segments = 8
+		_dust_mesh.rings = 4
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.vertex_color_use_as_albedo = true
+		m.albedo_color = Color(0.92, 0.86, 0.76, 0.35)
+		_dust_mesh.material = m
+	var ps := CPUParticles3D.new()
+	ps.mesh = _dust_mesh
+	ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+	ps.emission_points = pts
+	ps.amount = clampi(pts.size() / 3, 4, 14)
+	ps.one_shot = true
+	ps.explosiveness = 0.9
+	ps.lifetime = 1.3
+	ps.direction = Vector3.UP
+	ps.spread = 90.0
+	ps.initial_velocity_min = 0.4
+	ps.initial_velocity_max = 1.4
+	ps.gravity = Vector3(0, 0.4, 0)
+	ps.damping_min = 1.0
+	ps.damping_max = 2.0
+	ps.scale_amount_min = 1.0
+	ps.scale_amount_max = 2.2
+	var c := Curve.new()
+	c.add_point(Vector2(0, 0.4))
+	c.add_point(Vector2(0.3, 1.0))
+	c.add_point(Vector2(1, 1.2))
+	ps.scale_amount_curve = c
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0.8))
+	g.set_color(1, Color(1, 1, 1, 0.0))
+	ps.color_ramp = g
+	ps.local_coords = false
+	add_child(ps)
+	ps.emitting = true
+	get_tree().create_timer(1.5).timeout.connect(ps.queue_free)
 
 static var _curve_cache: Curve
 static func _shrink_curve() -> Curve:

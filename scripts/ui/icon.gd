@@ -42,6 +42,14 @@ func _draw() -> void:
 				draw_colored_polygon(hex, color)
 			hex.append(hex[0])
 			draw_polyline(hex, color.lightened(0.3) if filled else Color(color, 0.5), 2.0, true)
+		"matter":
+			# 小体素块（等轴测的立方体）
+			var top := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r * 0.87, -r * 0.5), c + Vector2(0, 0), c + Vector2(-r * 0.87, -r * 0.5)])
+			var lf := PackedVector2Array([c + Vector2(-r * 0.87, -r * 0.5), c, c + Vector2(0, r), c + Vector2(-r * 0.87, r * 0.5)])
+			var rt := PackedVector2Array([c, c + Vector2(r * 0.87, -r * 0.5), c + Vector2(r * 0.87, r * 0.5), c + Vector2(0, r)])
+			draw_colored_polygon(top, color.lightened(0.35))
+			draw_colored_polygon(lf, color)
+			draw_colored_polygon(rt, color.darkened(0.3))
 		"fragment":
 			var dia := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r * 0.7, 0), c + Vector2(0, r), c + Vector2(-r * 0.7, 0)])
 			draw_colored_polygon(dia, color)

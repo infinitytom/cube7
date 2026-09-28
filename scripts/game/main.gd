@@ -34,6 +34,7 @@ func _ready() -> void:
 	level.set("world_path", NodePath("../VoxelWorld"))
 	add_child(level)
 	level.call("build")
+	world.track_damage = true
 	player.world = world
 	player.apply_form(MorphBall.BALL, false)
 	player.respawn_at(level.call("spawn_position"), -1, false)

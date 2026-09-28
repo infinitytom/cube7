@@ -8,7 +8,7 @@ extends Node3D
 ##   4. 所有角度（包括俯视模式切换）都平滑插值
 
 @export var target_path: NodePath
-@export var distance := 7.0
+@export var distance := 8.6
 @export var model_distance := 15.0
 @export var stick_speed := Vector2(2.6, 1.7)
 @export var mouse_sensitivity := 0.0025
@@ -21,7 +21,7 @@ var model_view := false
 var _target: Node3D
 var _cam: Camera3D
 var _pivot := Vector3.ZERO
-var _cur_dist := 7.0
+var _cur_dist := 8.6
 var _cur_pitch := -0.5
 var _lift_target := 0.0
 var _lift := 0.0
@@ -36,7 +36,7 @@ func _ready() -> void:
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_target = get_node_or_null(target_path)
 	_cam = Camera3D.new()
-	_cam.fov = 65.0
+	_cam.fov = 72.0
 	_cam.near = 0.05
 	_cam.current = true
 	_cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF

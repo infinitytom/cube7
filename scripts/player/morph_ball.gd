@@ -515,12 +515,40 @@ func _dash(speed: float, full: bool) -> void:
 	_dash_t = 0.35 if not full else 0.55
 	charged_ram = full
 	var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
+	# 冲撞辅助瞄准：前方 60° 扇形、7 米内有敌人就朝它冲（不用对得很准）
+	var aim := _aim_assist(_move_dir, 7.0, 60.0)
+	if aim != Vector3.ZERO:
+		_move_dir = aim
 	apply_central_impulse((_move_dir * speed - vh) * mass)
 	_burst(FORMS[BALL].color if not full else Color("ffe066"))
 	Sfx.play("dash", global_position, -2.0 + (3.0 if full else 0.0), 0.05, 1.0 if not full else 0.8)
 	if full:
 		GameState.shake.emit(0.2)
 		_ring_fx(Color("ffe066"), 1.6)
+
+func _aim_assist(dir: Vector3, reach: float, cone_deg: float) -> Vector3:
+	var best := Vector3.ZERO
+	var best_score := 1e9
+	var d0 := Vector3(dir.x, 0, dir.z).normalized()
+	for e in get_tree().get_nodes_in_group("enemy"):
+		var n := e as Node3D
+		if n == null or n.get("dead") == true:
+			continue
+		var to := n.global_position - global_position
+		if absf(to.y) > 2.5:
+			continue
+		to.y = 0.0
+		var dist := to.length()
+		if dist > reach or dist < 0.3:
+			continue
+		var ang := rad_to_deg(d0.angle_to(to))
+		if ang > cone_deg:
+			continue
+		var score := dist + ang * 0.08
+		if score < best_score:
+			best_score = score
+			best = to.normalized()
+	return best
 
 ## 蓄力时的光球（滚球蓄力冲刺 / 气泡蓄泡泡弹）
 func _charge_fx(on: bool, t: float) -> void:
@@ -633,10 +661,10 @@ func hurt(from: Vector3, n := 1) -> void:
 	if get_meta("riding", false):
 		for r in get_tree().get_nodes_in_group("sky_rail"):
 			r.call("knock_off")
-	_invuln = 1.4
+	_invuln = 2.0
 	var away := global_position - from
 	away.y = 0.0
-	linear_velocity = away.normalized() * 6.0 + Vector3.UP * 4.0
+	linear_velocity = away.normalized() * 4.2 + Vector3.UP * 3.6
 	_no_snap = 0.4
 	Sfx.play("hurt", Vector3.INF, -2.0, 0.05)
 	Sfx.play("pix_hurt", Vector3.INF, -8.0, 0.1)
@@ -692,10 +720,21 @@ func _handle_impacts() -> void:
 	for imp in list:
 		var speed: float = imp.speed
 		var n: Vector3 = imp.normal
-		var radius := clampf(0.45 + speed * 0.065, 0.5, 1.3)
+		# 落地（撞的是脚下）打折：普通跳下来不会把地面砸穿，想砸地用钻头下砸。
+		# 高速滚过地面体素的接缝时，接触点在球底附近、法线却是斜的——也算“脚下”，免得把地面犁出沟
+		var r: float = FORMS[form].radius * BODY
+		var low := (imp.point as Vector3).y < global_position.y - r * 0.55
+		if n.y > 0.55 or low:
+			speed *= 0.55
+		if speed <= IMPACT_MIN:
+			continue
+		var radius := clampf(0.45 + speed * 0.07, 0.5, 1.55)
 		var center: Vector3 = imp.point - n * 0.25
-		var count := world.break_sphere(center, radius, "impact", speed, imp.vel)
-		if count == 0 and speed > 4.0:
+		var floor_y := -INF if (n.y > 0.55 or low) else global_position.y - r + 0.02
+		var count := world.break_sphere(center, radius, "impact", speed, imp.vel, false, floor_y)
+		if count >= 24:
+			GameState.hitstop(0.05)
+		if count == 0 and speed > 4.0 and n.y <= 0.55 and not low:
 			Sfx.play("thud", global_position, linear_to_db(clampf(speed / 12.0, 0.2, 1.0)), 0.1)
 			_hardness_hint(center, speed)
 		if count >= 2:

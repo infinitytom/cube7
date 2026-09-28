@@ -163,7 +163,7 @@ func _check_contact() -> void:
 	if p == null or not hit_area.overlaps_body(p):
 		return
 	# 从上往下踩：任何形态落在头上都算（马里奥式），踩完弹起来
-	if p.linear_velocity.y < -1.5 and p.global_position.y > global_position.y + _hit_size().y * 0.55 and _stompable():
+	if p.linear_velocity.y < -1.5 and p.global_position.y > global_position.y + _hit_size().y * 0.42 and _stompable():
 		p.stomp_bounce()
 		take_hit(p.global_position, "stomp")
 		return
@@ -184,7 +184,9 @@ func take_hit(from: Vector3, kind: String) -> void:
 	hp -= 1
 	_hit_flash = 0.15
 	Sfx.play("clang", global_position, -4.0, 0.1)
-	GameState.shake.emit(0.12)
+	GameState.shake.emit(0.16)
+	if hp > 1:
+		GameState.hitstop(0.035)
 	if hp <= 0:
 		defeat(true)
 	else:
@@ -276,7 +278,8 @@ func defeat(drops: bool) -> void:
 		return
 	dead = true
 	Sfx.play("enemy_defeat", global_position, 0.0, 0.08)
-	GameState.shake.emit(0.2)
+	GameState.shake.emit(0.3)
+	GameState.hitstop(0.07)
 	GameState.enemies_defeated += 1
 	GameState.add_combo(5)
 	if drops:

@@ -28,9 +28,19 @@ var blocks_broken := 0:
 	set(v):
 		if v > blocks_broken:
 			_combo_hit(v - blocks_broken)
+			add_matter(v - blocks_broken)
 		blocks_broken = v
 		if v == 80:
 			say("你是拆迁队吗？……好吧，拆得还挺专业。")
+
+# ---------------------------------------------------------------- 重构物质
+## 拆掉的每一格都会变成“重构物质”（HUD 上的小方块数字）——攒够了就能在重构点把废墟一块块重建起来
+signal matter_changed(value: int)
+var matter := 0
+
+func add_matter(n: int) -> void:
+	matter = maxi(0, matter + n)
+	matter_changed.emit(matter)
 
 # ---------------------------------------------------------------- 连拆（连击）
 ## 1.6 秒内不停地拆东西会累积“连拆”，断掉时按连击数奖励金币——拆得越爽，拿得越多
@@ -54,7 +64,7 @@ func _process(delta: float) -> void:
 		if _combo_t <= 0.0:
 			var bonus := 0
 			if combo >= 8:
-				bonus = combo / 4 + (10 if combo >= 30 else 0) + (25 if combo >= 60 else 0)
+				bonus = mini(combo / 4 + (10 if combo >= 30 else 0) + (25 if combo >= 60 else 0), 45)
 				add_coins(bonus)
 			combo_finished.emit(combo, bonus)
 			combo = 0
@@ -106,6 +116,8 @@ func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count
 	shield = max_shield
 	blocks_broken = 0
 	enemies_defeated = 0
+	matter = 0
+	matter_changed.emit(0)
 
 func unlock_form(i: int) -> void:
 	if unlocked_forms[i]:
@@ -169,10 +181,53 @@ func set_checkpoint(pos: Vector3, form := -1, locks := false) -> void:
 	checkpoint_form = form
 	checkpoint_locks_form = locks
 
+## 顿帧：大破坏、打倒敌人时整个游戏停一下下，打击感
+var _hitstop_until := 0
+func hitstop(secs: float) -> void:
+	if OS.has_feature("headless") or DisplayServer.get_name() == "headless":
+		return
+	var now := Time.get_ticks_msec()
+	_hitstop_until = maxi(_hitstop_until, now + int(secs * 1000.0))
+	Engine.time_scale = 0.06
+	get_tree().create_timer(secs, true, false, true).timeout.connect(func() -> void:
+		if Time.get_ticks_msec() >= _hitstop_until - 5:
+			Engine.time_scale = 1.0)
+
 func say(text: String) -> void:
 	nova_say.emit(text)
 
 # ---------------------------------------------------------------- 输入设备识别
+
+func _ready() -> void:
+	_bind_ui_pad()
+
+## Godot 自带的 ui_accept / ui_cancel 不含手柄键：补上 ✕/A 确认、○/B 返回、十字键和左摇杆导航
+func _bind_ui_pad() -> void:
+	var btn := func(action: String, idx: int) -> void:
+		var e := InputEventJoypadButton.new()
+		e.button_index = idx as JoyButton
+		e.device = -1
+		if not InputMap.action_has_event(action, e):
+			InputMap.action_add_event(action, e)
+	var axis := func(action: String, ax: int, v: float) -> void:
+		var e := InputEventJoypadMotion.new()
+		e.axis = ax as JoyAxis
+		e.axis_value = v
+		e.device = -1
+		if not InputMap.action_has_event(action, e):
+			InputMap.action_add_event(action, e)
+	btn.call("ui_accept", JOY_BUTTON_A)
+	btn.call("ui_cancel", JOY_BUTTON_B)
+	btn.call("ui_up", JOY_BUTTON_DPAD_UP)
+	btn.call("ui_down", JOY_BUTTON_DPAD_DOWN)
+	btn.call("ui_left", JOY_BUTTON_DPAD_LEFT)
+	btn.call("ui_right", JOY_BUTTON_DPAD_RIGHT)
+	axis.call("ui_up", JOY_AXIS_LEFT_Y, -1.0)
+	axis.call("ui_down", JOY_AXIS_LEFT_Y, 1.0)
+	axis.call("ui_left", JOY_AXIS_LEFT_X, -1.0)
+	axis.call("ui_right", JOY_AXIS_LEFT_X, 1.0)
+	for a in ["ui_up", "ui_down", "ui_left", "ui_right"]:
+		InputMap.action_set_deadzone(a, 0.5)
 
 func _input(event: InputEvent) -> void:
 	var kind := device

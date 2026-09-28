@@ -9,6 +9,7 @@ extends CanvasLayer
 
 var _root: Control
 var _coins: Label
+var _matter: Label
 var _energy_bar: ProgressBar
 var _shields: Array[UIIcon] = []
 var _frag_row: HBoxContainer
@@ -66,6 +67,7 @@ func _ready() -> void:
 	add_child(_pause)
 	GameState.coins_changed.connect(func(_v: int) -> void: _refresh_stats(true))
 	GameState.energy_changed.connect(func(_v: int) -> void: _refresh_stats())
+	GameState.matter_changed.connect(func(v: int) -> void: _matter.text = str(v))
 	GameState.shield_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.fragments_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.seeds_changed.connect(func(_v: int) -> void: _refresh_stats(true))
@@ -223,7 +225,7 @@ func _show_clear() -> void:
 func _build_stats() -> void:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG, UIKit.LINE, 16, 14))
-	UIKit.place(p, Vector4(0, 0, 0, 0), Vector4(24, 22, 290, 22))
+	UIKit.place(p, Vector4(0, 0, 0, 0), Vector4(24, 22, 340, 22))
 	_root.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
@@ -233,6 +235,10 @@ func _build_stats() -> void:
 	coin_row.add_child(UIIcon.make("coin", UIKit.ACCENT2, 30))
 	_coins = UIKit.label("0", 30, Color.WHITE, true)
 	coin_row.add_child(_coins)
+	coin_row.add_child(UIKit.make_spacer(10))
+	coin_row.add_child(UIIcon.make("matter", Color("7de3ff"), 26))
+	_matter = UIKit.label("0", 26, Color("c8f4ff"), true)
+	coin_row.add_child(_matter)
 	v.add_child(coin_row)
 	var e_row := HBoxContainer.new()
 	e_row.add_theme_constant_override("separation", 10)
@@ -288,19 +294,19 @@ func _build_objective() -> void:
 func _build_nova() -> void:
 	_nova = PanelContainer.new()
 	_nova.add_theme_stylebox_override("panel", UIKit.panel(UIKit.BG_SOLID, Color(0.31, 0.82, 1.0, 0.45), 18, 16, 2))
-	UIKit.place(_nova, Vector4(0.5, 1, 0.5, 1), Vector4(-480, -250, 480, -250))
+	UIKit.place(_nova, Vector4(0.5, 1, 0.5, 1), Vector4(-400, -196, 400, -196))
 	_nova.visible = false
 	_root.add_child(_nova)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 16)
 	_nova.add_child(h)
 	_portrait = NovaPortrait.new()
-	_portrait.custom_minimum_size = Vector2(76, 76)
+	_portrait.custom_minimum_size = Vector2(58, 58)
 	h.add_child(_portrait)
 	var v := VBoxContainer.new()
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(v)
-	_nova_name = UIKit.label("NOVA · 站点 AI", 17, UIKit.ACCENT, true)
+	_nova_name = UIKit.label("NOVA · 站点 AI", 15, UIKit.ACCENT, true)
 	v.add_child(_nova_name)
 	# 富文本：台词里的按键直接显示成手柄 / 键盘图标
 	_nova_text = RichTextLabel.new()
@@ -309,9 +315,9 @@ func _build_nova() -> void:
 	_nova_text.scroll_active = false
 	_nova_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_nova_text.add_theme_font_override("normal_font", UIKit.font())
-	_nova_text.add_theme_font_size_override("normal_font_size", 24)
+	_nova_text.add_theme_font_size_override("normal_font_size", 21)
 	_nova_text.add_theme_color_override("default_color", UIKit.TEXT)
-	_nova_text.custom_minimum_size = Vector2(620, 0)
+	_nova_text.custom_minimum_size = Vector2(540, 0)
 	_nova_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.add_child(_nova_text)
 
@@ -420,16 +426,17 @@ func _refresh_prompts() -> void:
 	for c in _prompts.get_children():
 		c.queue_free()
 	var p := GameState.player as MorphBall
+	_prompt_idle = 0.0
 	if p:
-		_prompts.add_child(UIKit.prompt("ability", MorphBall.FORMS[p.form].ability, 24))
-	_prompts.add_child(UIKit.prompt("boost", "加速", 24))
+		_prompts.add_child(UIKit.prompt("ability", MorphBall.FORMS[p.form].ability, 21))
+	_prompts.add_child(UIKit.prompt("boost", "加速", 21))
 	if GameState.allow_jump and p:
-		_prompts.add_child(UIKit.prompt("jump", MorphBall.FORMS[p.form].jump_name, 24))
+		_prompts.add_child(UIKit.prompt("jump", MorphBall.FORMS[p.form].jump_name, 21))
 	if _grab_hint != "":
 		var gp := UIKit.prompt("grab", _grab_hint, 28)
 		gp.modulate = UIKit.ACCENT2
 		_prompts.add_child(gp)
-	_prompts.add_child(UIKit.prompt("pause", "菜单", 24))
+	_prompts.add_child(UIKit.prompt("pause", "菜单", 21))
 	if _form_badges.size() > 0:
 		pass
 
@@ -494,7 +501,14 @@ func _fmt_rich(t: String) -> String:
 
 # ================================================================ NOVA 对话
 
+var _prompt_idle := 0.0
+
 func _process(delta: float) -> void:
+	# 右下角按键提示：一段时间没变化就淡出，别一直挡着画面（换形态、能抓东西时再亮出来）
+	_prompt_idle += delta
+	if _prompts:
+		var want := 1.0 if _prompt_idle < 8.0 or _grab_hint != "" else 0.0
+		_prompts.modulate.a = move_toward(_prompts.modulate.a, want, delta * 1.5)
 	# 靠近能抓的东西时，右下角亮出“抓取”，抱着东西时变成“投掷”
 	_grab_t -= delta
 	if _grab_t <= 0.0:
