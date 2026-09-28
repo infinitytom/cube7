@@ -35,6 +35,33 @@ func _key(k: Key) -> void:
 func _run() -> void:
 	for i in SaveGame.SLOTS:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_%d.json" % i))
+	if OS.get_cmdline_user_args().has("--nextch"):
+		await _wait(2.0)
+		SaveGame.new_game(0)
+		SaveGame.data["forms"] = [true, true, false]
+		SaveGame.data["coins"] = 120
+		SaveGame.write()
+		Flow.goto_game("continue")
+		await _wait(7.0)
+		var hud := get_tree().current_scene.get("hud") as Node
+		hud.call("_show_clear")
+		await _wait(2.5)
+		await _save("n01_clear_ch1")
+		var btn: Button = null
+		for b in hud.find_children("*", "Button", true, false):
+			if (b as Button).text.begins_with("前往"):
+				btn = b
+		print("next button: ", btn.text if btn else "none")
+		if btn:
+			btn.pressed.emit()
+		for i in 5:
+			await _wait(3.0)
+			await _save("n%02d_arrival" % (i + 2))
+		await _wait(3.0)
+		await _save("n07_ch2_start")
+		print("chapter now ", GameState.chapter, " save chapter ", SaveGame.data.get("chapter"), " coins ", GameState.coins, " forms ", GameState.unlocked_forms)
+		get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--cgonly"):
 		await _wait(2.0)
 		get_tree().current_scene.call("_start_new", 0)
