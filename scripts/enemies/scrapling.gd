@@ -273,11 +273,21 @@ func _hit_from_front(from: Vector3) -> bool:
 func _check_contact(p: MorphBall) -> void:
 	if p == null or not _hit_area.overlaps_body(p):
 		return
+	# 从上面踩：把它踩翻（翻倒后随便碰一下就碎）
+	if p.linear_velocity.y < -1.5 and p.global_position.y > global_position.y + 0.55 and state != St.FLIPPED:
+		p.stomp_bounce()
+		_set_state(St.FLIPPED)
+		Sfx.play("clang", global_position, -4.0, 0.1)
+		return
 	var atk := p.attack
 	if atk == "drill" or atk == "pound":
 		_defeat(true)
 		return
 	if atk == "ram":
+		if p.charged_ram and _hit_from_front(p.global_position) and not vulnerable():
+			FloatText.spawn(get_parent(), global_position + Vector3.UP * 1.0, "盾牌撞碎了！", Color("ffe066"), 48, 1.2)
+			_defeat(true)
+			return
 		if vulnerable() or not _hit_from_front(p.global_position):
 			_defeat(true)
 		else:
@@ -329,6 +339,32 @@ func on_wave(from: Vector3) -> void:
 	velocity.y = 4.0
 	_set_state(St.FLIPPED)
 
+## 被扔出去的物件砸中：翻倒
+func on_item(_item: Node3D) -> void:
+	if state == St.DEAD:
+		return
+	if state == St.FLIPPED or state == St.DIZZY:
+		_defeat(true)
+		return
+	velocity.y = 4.0
+	_set_state(St.FLIPPED)
+	Sfx.play("clang", global_position, -2.0, 0.1)
+
+## 泡泡弹：包住它飘起来，破掉以后摔个四脚朝天
+func on_bubble(_shot: Node3D) -> void:
+	if state == St.DEAD:
+		return
+	velocity.y = 7.0
+	_knock = Vector3.ZERO
+	_set_state(St.FLIPPED)
+	_t = -1.0
+	FloatText.spawn(get_parent(), global_position + Vector3.UP * 1.0, "困住了！", Color("d9c6ff"), 40, 1.0)
+
+func take_hit(_from: Vector3, _kind: String) -> void:
+	_defeat(true)
+
+signal defeated(e: Node)
+
 func _defeat(drops: bool) -> void:
 	if state == St.DEAD:
 		return
@@ -344,6 +380,7 @@ func _defeat(drops: bool) -> void:
 			PickupScript.spawn(parent, "coin", global_position + Vector3.UP * 0.6)
 		for i in 2:
 			PickupScript.spawn(parent, "energy", global_position + Vector3.UP * 0.6)
+	defeated.emit(self)
 	# 碎成几块锈色小方块飞散
 	for i in 7:
 		var b := MeshInstance3D.new()

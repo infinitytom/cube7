@@ -11,6 +11,8 @@ var home := Vector3.ZERO
 ## 火种：刚扔出去 / 放下的几秒内会点燃碰到的可燃物
 var _hot_t := 0.0
 var _ign_t := 0.0
+var _hit_cd := 0.0
+var _thrown_t := 0.0
 var _outline: MeshInstance3D
 var _t := 0.0
 
@@ -78,6 +80,18 @@ func _physics_process(delta: float) -> void:
 				var tw := create_tween()
 				tw.tween_property(self, "scale", Vector3.ONE * 0.05, 0.4)
 				tw.tween_callback(queue_free)
+	# 扔出去砸中敌人
+	_hit_cd -= delta
+	_thrown_t -= delta
+	if not held and _thrown_t > 0.0 and _hit_cd <= 0.0 and linear_velocity.length() > 2.5:
+		for e in get_tree().get_nodes_in_group("enemy"):
+			var en := e as Node3D
+			if (en.global_position + Vector3.UP * 0.4).distance_to(global_position) < 0.85:
+				_hit_cd = 0.8
+				e.call("on_item", self)
+				linear_velocity = -linear_velocity * 0.3 + Vector3.UP * 2.0
+				FloatText.spawn(get_parent(), global_position + Vector3.UP * 0.5, "砸中！", Color("ffe066"), 44, 1.0)
+				break
 	if not held and global_position.y < GameState.kill_y:
 		global_position = home
 		linear_velocity = Vector3.ZERO
@@ -89,6 +103,7 @@ func set_held(v: bool) -> void:
 	held = v
 	if not v:
 		_hot_t = 3.0
+		_thrown_t = 2.0
 	freeze = v
 	collision_layer = 0 if v else 4
 	collision_mask = 0 if v else (1 | 2 | 4 | 8)

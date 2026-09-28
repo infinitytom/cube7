@@ -1,2 +1,4 @@
 .godot/
 export/
+tools/sf/
+tools/__pycache__/

@@ -12,7 +12,7 @@ extends LevelBase
 ##   E 松土：向下钻，掉进洞穴 → 从悬崖侧面出来到 F 台地（G+2）
 ##   F 中枢塔：钻开晶洞取出能量晶块，放进塔基 → 光桥升起通往终点浮岛（G+10）
 
-const SIZE := Vector3i(128, 44, 100)
+const SIZE := Vector3i(128, 72, 128)
 const G := 20
 
 ## 浮岛由若干圆形地块拼成：[中心 x, 中心 z, 半径, 地面高度]
@@ -29,6 +29,9 @@ const BLOBS := [
 	[94, 42, 7, G + 2],     # F 洞口前（和 E 高台下的洞穴相接）
 	[104, 44, 6, G + 2],    # F 光桥起点
 	[104, 80, 7, G + 10],   # 终点浮岛
+	[10, 52, 10, G],        # 古树（西北角）
+	[34, 110, 12, G],       # 锈蚀营地（南边的小岛）
+	[26, 104, 6, G],
 ]
 
 const SPAWN := Vector3i(19, G - 2, 74)
@@ -37,17 +40,26 @@ const RAMP_CD := Rect2i(63, 59, 4, 12)      # x, z, 宽, 长（沿 -Z 升高）
 const DOME_C := Vector3i(64, G + 6, 36)
 const DOME_R := 11
 const SOCKET := Vector3i(100, G + 1, 29)
+const TREE_C := Vector2i(10, 52)         ## 古树树干中心（格）
+const CAMP := Vector3i(34, G, 110)       ## 锈蚀营地的笼子
+const TOWER_H := 36                      ## 重构塔高度（格）
+const TOWER_TOP := Vector3i(100, G + 2 + TOWER_H, 24)
 
 var heights := {}          # Vector2i -> 地面高度（第一个空气层的 y）
 var backdrop := false      ## 只当标题画面背景：不放机关、不放音乐
 var socket: ItemSocket
-var enemies: Array[Scrapling] = []
+var enemies: Array[Node3D] = []
 var form_core: Node
 var fragments := {}        # id -> 节点
 var crystal: UsableItem
 var bridge_cells: Array = []
 var bridge_built := false
 var _noise := FastNoiseLite.new()
+var vista: Vista
+var camp_enemies: Array = []
+var cage_cells: Array[Vector3i] = []
+var deck_cell := Vector3i.ZERO
+var _beam: Node3D
 
 ## 出生时的镜头朝向：从西南方看过去，避开坠毁的飞船，东边的出口在画面右侧
 func spawn_yaw() -> float:
@@ -60,9 +72,8 @@ func build() -> void:
 	world = get_node(world_path) as VoxelWorld
 	if not backdrop:
 		GameState.reset_for_level([true, false, false] as Array[bool], true, 1.0, 3)
-	var sky := SkyWorld.new()
-	sky.center = Vector3(SIZE.x * 0.25, 0, SIZE.z * 0.25)
-	add_child(sky)
+	if not backdrop:
+		Atmosphere.apply(self, "greenhouse")
 	rng.seed = 20260927
 	_noise.seed = 7
 	_noise.frequency = 0.08
@@ -78,18 +89,26 @@ func build() -> void:
 	_mud_wall_and_cave()
 	_pylon_and_bridge()
 	_fences()
+	_great_tree()
+	_rust_camp()
+	_ruins()
+	_outcrops()
 	# 体素精度上的自然化（崩边、岩层、垂草）；谜题关键处不动
-	world.naturalize(G + 14, [
+	world.naturalize(G + 20, [
 		AABB(Vector3(20, 0, 69), Vector3(9, 44, 9)),          # 出坑坡道和木箱
 		AABB(Vector3(44, 0, 56), Vector3(30, 44, 30)),        # 砂塔、深沟、坡道
 		AABB(Vector3(DOME_C.x - DOME_R - 2, 0, DOME_C.z - DOME_R - 2), Vector3(DOME_R * 2 + 5, 44, DOME_R * 2 + 5)),
-		AABB(Vector3(94, 0, 22), Vector3(16, 44, 30)),        # 插槽和光桥
+		AABB(Vector3(94, 0, 18), Vector3(16, 72, 34)),        # 插槽、重构塔和光桥
+		AABB(Vector3(0, 0, 40), Vector3(24, 72, 26)),         # 古树
+		AABB(Vector3(22, 0, 96), Vector3(26, 72, 26)),        # 锈蚀营地
+		AABB(Vector3(34, 0, 80), Vector3(9, 72, 20)),         # 木桥
 	])
 	world.rebuild_all()
 	scatter_decor(Vector3i(0, G - 3, 0), Vector3i(SIZE.x - 1, G + 12, SIZE.z - 1), 0.28, 0.07, 0.03)
 	decor.commit()
 	_dress()
 	world.flush_dirty()
+	vista = Vistas.greenhouse(self, world, _island_falls())
 	if backdrop:
 		return
 	_logic()
@@ -118,7 +137,7 @@ func _dress() -> void:
 	deco("space-station/container-wide", 104, 30, 1.2)
 	# 成片的树林（边缘和角落），让岛看起来是“长满了”的
 	for c in [Vector2i(30, 61), Vector2i(48, 85), Vector2i(35, 86), Vector2i(70, 80), Vector2i(80, 70),
-			Vector2i(58, 38), Vector2i(86, 62), Vector2i(8, 60), Vector2i(20, 88), Vector2i(76, 36), Vector2i(110, 50)]:
+			Vector2i(58, 38), Vector2i(86, 62), Vector2i(20, 88), Vector2i(76, 36), Vector2i(110, 50)]:
 		for k in 2:
 			var cell := find_flat(c.x + rng.randi_range(-3, 3), c.y + rng.randi_range(-3, 3), 3, 1)
 			if cell.y >= 0 and world.get_block(cell) == Blocks.AIR:
@@ -424,12 +443,27 @@ func _mud_wall_and_cave() -> void:
 
 func _pylon_and_bridge() -> void:
 	var pc := Vector3i(100, G + 2, 24)
-	# 塔身
-	world.fill_box(pc + Vector3i(-1, 0, -1), pc + Vector3i(1, 12, 1), Blocks.HULL)
-	world.fill_box(pc + Vector3i(-2, 0, -2), pc + Vector3i(2, 1, 2), Blocks.HULL_DARK)
-	for y in [4, 8]:
-		world.fill_box(pc + Vector3i(-1, y, -1), pc + Vector3i(1, y, 1), Blocks.LAMP)
-	world.fill_box(pc + Vector3i(0, 13, 0), pc + Vector3i(0, 14, 0), Blocks.RECEIVER)
+	# 重构塔：18 米高的白色高塔，三层悬浮环，塔顶的接收器点亮后会向天空打出光柱
+	world.fill_box(pc + Vector3i(-3, 0, -3), pc + Vector3i(3, 1, 3), Blocks.HULL_DARK)
+	world.fill_box(pc + Vector3i(-2, 2, -2), pc + Vector3i(2, 9, 2), Blocks.HULL)
+	world.fill_box(pc + Vector3i(-2, 2, -2), pc + Vector3i(-2, 9, -2), Blocks.HULL_DARK)
+	world.fill_box(pc + Vector3i(2, 2, -2), pc + Vector3i(2, 9, -2), Blocks.HULL_DARK)
+	world.fill_box(pc + Vector3i(-2, 2, 2), pc + Vector3i(-2, 9, 2), Blocks.HULL_DARK)
+	world.fill_box(pc + Vector3i(2, 2, 2), pc + Vector3i(2, 9, 2), Blocks.HULL_DARK)
+	world.fill_box(pc + Vector3i(-1, 10, -1), pc + Vector3i(1, TOWER_H - 1, 1), Blocks.HULL)
+	for y in range(6, TOWER_H - 2, 6):
+		world.fill_box(pc + Vector3i(-1, y, -1), pc + Vector3i(1, y, 1), Blocks.LAMP if y < 10 else Blocks.HULL_DARK)
+	# 悬浮环（和塔身之间留一格空）
+	for ring in [[14, 3], [23, 3], [30, 2]]:
+		var ry: int = ring[0]
+		var rr: int = ring[1] + 1
+		for dz in range(-rr, rr + 1):
+			for dx in range(-rr, rr + 1):
+				if maxi(absi(dx), absi(dz)) == rr:
+					var corner := absi(dx) == rr and absi(dz) == rr
+					world.fill_box(pc + Vector3i(dx, ry, dz), pc + Vector3i(dx, ry, dz), Blocks.LAMP if corner else Blocks.HULL)
+	world.fill_box(pc + Vector3i(0, TOWER_H, 0), pc + Vector3i(0, TOWER_H, 0), Blocks.RECEIVER)
+	world.fill_box(pc + Vector3i(-1, TOWER_H - 1, -1), pc + Vector3i(1, TOWER_H - 1, 1), Blocks.HULL_DARK)
 	# 塔基前的插槽凹位
 	world.fill_box(SOCKET, SOCKET, Blocks.AIR)
 	# 晶洞：岩石小丘里包着紫色晶洞
@@ -502,6 +536,331 @@ func _fences() -> void:
 			if top == Blocks.LAMP:
 				world.fill_box(Vector3i(x, G + 8, z), Vector3i(x, G + 8, z), Blocks.LAMP)
 
+# ================================================================ 古树：温室群岛最老的居民
+
+## 一棵十几米高的粉色古树。树干周围盘着一圈圈树枝平台，跳上去能到树屋（宝箱 + 记忆碎片 + 眺望星核塔）
+func _great_tree() -> void:
+	var C := VoxelWorld.CELL
+	var base_y := G * C
+	var cx := TREE_C.x * C + 1.0
+	var cz := TREE_C.y * C + 1.0
+	var trunk_h := 26 * C
+	var n := FastNoiseLite.new()
+	n.seed = 31
+	n.frequency = 0.18
+	# 地面整平一圈
+	for z in range(TREE_C.y - 7, TREE_C.y + 8):
+		for x in range(TREE_C.x - 7, TREE_C.x + 8):
+			if h_at(x, z) >= 0 and Vector2(x - TREE_C.x, z - TREE_C.y).length() < 7.5:
+				_set_h(x, z, G)
+				_column(x, z, G, 12 + int(Vector2(x - TREE_C.x, z - TREE_C.y).length() < 4.0) * 6)
+	# 树干：粗壮、微微扭转，根部外扩
+	for y in range(base_y - 6, base_y + trunk_h):
+		var t := clampf(float(y - base_y) / trunk_h, 0.0, 1.0)
+		var flare := maxf(0.0, 1.0 - float(y - base_y) / 12.0)
+		var r := 5.0 * (1.0 - 0.3 * t) + 5.0 * flare * flare
+		var ox := sin(t * 2.4) * 2.0
+		var oz := cos(t * 1.7) * 1.5 - 1.5
+		var ir := int(ceil(r)) + 2
+		for dz in range(-ir, ir + 1):
+			for dx in range(-ir, ir + 1):
+				var q := Vector2(dx + 0.5 - ox, dz + 0.5 - oz)
+				var ang := atan2(q.y, q.x)
+				if q.length() <= r + n.get_noise_3d(cos(ang) * 6.0, y * 0.35, sin(ang) * 6.0) * 1.1:
+					world.vset_raw(Vector3i(int(cx) + dx, y, int(cz) + dz), Blocks.WOOD)
+	# 地面上的大树根
+	for k in 7:
+		var a := k * TAU / 7.0 + 0.3
+		var d := Vector2(cos(a), sin(a))
+		for st in range(0, 18):
+			var rr := 2.6 - st * 0.12
+			var p := Vector2(cx, cz) + d * (8.0 + st)
+			var yy := base_y - 1 + (1 if st < 6 else 0)
+			for dz in range(-3, 4):
+				for dx in range(-3, 4):
+					for dy in range(-2, 3):
+						if Vector3(dx, dy * 1.4, dz).length() <= rr:
+							world.vset_raw(Vector3i(int(p.x) + dx, yy + dy, int(p.y) + dz), Blocks.WOOD)
+	# 螺旋上升的树枝平台（每级 0.75 米，滚球跳得上去）
+	var top_c := Vector2(cx, cz)
+	for i in 10:
+		var a := i * deg_to_rad(60.0) + 0.9
+		var pr := 10.5
+		var pcx := int(cx + cos(a) * pr)
+		var pcz := int(cz + sin(a) * pr)
+		var yt := base_y + 3 * (i + 1) - 1
+		world.vfill(Vector3i(pcx - 4, yt - 1, pcz - 4), Vector3i(pcx + 3, yt, pcz + 3), Blocks.PLANK)
+		# 枝干：从树干伸过来托住平台
+		for st in 8:
+			var bp := Vector2(cx, cz).lerp(Vector2(pcx, pcz), float(st) / 8.0)
+			world.vfill(Vector3i(int(bp.x) - 1, yt - 3, int(bp.y) - 1), Vector3i(int(bp.x) + 1, yt - 1, int(bp.y) + 1), Blocks.WOOD)
+		# 平台边上一小簇叶子
+		_leaf_blob(Vector3(pcx + cos(a) * 4.0, yt + 2, pcz + sin(a) * 4.0), 2.2, Blocks.LEAVES)
+	# 树屋平台：一圈木板 + 栏杆
+	var dy := base_y + 33
+	for dz in range(-15, 16):
+		for dx in range(-15, 16):
+			var d := Vector2(dx, dz).length()
+			var p := Vector3i(int(cx) + dx, dy, int(cz) + dz)
+			if d <= 14.5 and world.vget(p) == Blocks.AIR:
+				world.vset_raw(p, Blocks.PLANK)
+				world.vset_raw(p + Vector3i.DOWN, Blocks.WOOD)
+			if d > 13.5 and d <= 14.5 and (absi(dx) + absi(dz)) % 2 == 0:
+				world.vset_raw(p + Vector3i.UP, Blocks.WOOD)
+				world.vset_raw(p + Vector3i.UP * 2, Blocks.WOOD)
+	# 从最后一个平台上树屋的入口：栏杆留个缺口
+	var last_a := 9 * deg_to_rad(60.0) + 0.9
+	for k in range(-5, 6):
+		for dy2 in [1, 2]:
+			var ea := last_a + k * 0.04
+			var p2 := Vector3i(int(cx + cos(ea) * 14.0), dy + dy2, int(cz + sin(ea) * 14.0))
+			if world.vget(p2) == Blocks.WOOD:
+				world.vset_raw(p2, Blocks.AIR)
+	deck_cell = Vector3i(int(cx + cos(last_a + PI) * 9.5) / C, (dy + 1) / C, int(cz + sin(last_a + PI) * 9.5) / C)
+	# 大树枝和树冠：伞形的粉色花冠（扁椭球）+ 枝头的花团 + 垂下来的花串
+	var crown_y := base_y + trunk_h
+	var top := Vector3(cx + sin(2.4) * 2.0, crown_y, cz + cos(1.7) * 1.5 - 1.5)
+	var ends: Array[Vector3] = []
+	for k in 7:
+		var a := k * TAU / 7.0 + 0.5
+		var from := Vector3(top.x, crown_y - 10 + (k % 3) * 3, top.z)
+		var reach := 16.0 + (k % 3) * 3.0
+		var to := from + Vector3(cos(a) * reach, 6.0 + (k % 2) * 4.0, sin(a) * reach)
+		for st in 21:
+			var q := from.lerp(to, st / 20.0) + Vector3(0, sin(st / 20.0 * PI) * 2.5, 0)
+			var rr := 2.4 - st * 0.07
+			for ddz in range(-3, 4):
+				for ddy in range(-3, 4):
+					for ddx in range(-3, 4):
+						if Vector3(ddx, ddy, ddz).length() <= rr:
+							world.vset_raw(Vector3i(q) + Vector3i(ddx, ddy, ddz), Blocks.WOOD)
+		ends.append(to)
+	# 伞形主冠
+	_leaf_ellipsoid(top + Vector3(0, 9, 0), Vector3(21.0, 8.0, 21.0), Blocks.BLOSSOM)
+	for e in ends:
+		_leaf_ellipsoid(e + Vector3(0, 1, 0), Vector3(8.5, 5.5, 8.5) * rng.randf_range(0.85, 1.15), Blocks.BLOSSOM if rng.randf() < 0.8 else Blocks.LEAVES)
+	# 垂下来的花串
+	for k in 70:
+		var a := rng.randf() * TAU
+		var rr2 := rng.randf_range(8.0, 26.0)
+		var x := int(top.x + cos(a) * rr2)
+		var z := int(top.z + sin(a) * rr2)
+		var y := crown_y + 24
+		while y > crown_y - 12 and world.vget(Vector3i(x, y, z)) == Blocks.AIR:
+			y -= 1
+		if y <= crown_y - 12 or world.vget(Vector3i(x, y, z)) == Blocks.WOOD:
+			continue
+		# 找到花冠底面
+		while y > crown_y - 12 and world.vget(Vector3i(x, y - 1, z)) != Blocks.AIR:
+			y -= 1
+		for d in rng.randi_range(2, 7):
+			world.vset_raw(Vector3i(x, y - 1 - d, z), Blocks.BLOSSOM)
+	# 树屋底下挂的小灯笼
+	for k in 6:
+		var a := k * TAU / 6.0 + 0.2
+		var lp := Vector3i(int(cx + cos(a) * 12.0), dy - 3, int(cz + sin(a) * 12.0))
+		world.vset_raw(lp + Vector3i.UP, Blocks.WOOD)
+		world.vset_raw(lp, Blocks.LAMP)
+	world._mark_dirty_box(Vector3i(int(cx) - 40, base_y - 8, int(cz) - 40), Vector3i(int(cx) + 40, base_y + trunk_h + 30, int(cz) + 40))
+
+func _leaf_ellipsoid(c: Vector3, r: Vector3, t: int) -> void:
+	var n := FastNoiseLite.new()
+	n.seed = int(c.x * 7 + c.z * 13)
+	n.frequency = 0.22
+	for dz in range(-int(r.z) - 2, int(r.z) + 3):
+		for dy in range(-int(r.y) - 2, int(r.y) + 3):
+			for dx in range(-int(r.x) - 2, int(r.x) + 3):
+				var q := Vector3(dx / r.x, dy / r.y, dz / r.z)
+				# 底面稍微平一点
+				if dy < -r.y * 0.5:
+					continue
+				if q.length() <= 1.0 + n.get_noise_3d(dx, dy, dz) * 0.22:
+					var p := Vector3i(c) + Vector3i(dx, dy, dz)
+					if world.vget(p) == Blocks.AIR:
+						world.vset_raw(p, t)
+
+func _leaf_blob(c: Vector3, r: float, t: int) -> void:
+	var ir := int(ceil(r)) + 1
+	var n := FastNoiseLite.new()
+	n.seed = int(c.x * 7 + c.z * 13)
+	n.frequency = 0.3
+	for dz in range(-ir, ir + 1):
+		for dy in range(-ir, ir + 1):
+			for dx in range(-ir, ir + 1):
+				var q := Vector3(dx, dy * 1.25, dz)
+				if q.length() <= r + n.get_noise_3d(dx, dy, dz) * 1.4 and dy > -r * 0.6:
+					var p := Vector3i(c) + Vector3i(dx, dy, dz)
+					if world.vget(p) == Blocks.AIR:
+						world.vset_raw(p, t)
+
+# ================================================================ 锈蚀营地：南边小岛上，锈块兽们围着一个笼子
+
+func _rust_camp() -> void:
+	# 木桥：花园南端 → 营地小岛
+	for z in range(76, 104):
+		for x in range(36, 41):
+			var edge := x == 36 or x == 40
+			if h_at(x, z) >= 0:
+				continue
+			if edge:
+				world.fill_box(Vector3i(x, G - 1, z), Vector3i(x, G, z), Blocks.WOOD)
+				if z % 4 == 0:
+					world.fill_box(Vector3i(x, G + 1, z), Vector3i(x, G + 1, z), Blocks.WOOD)
+			else:
+				world.fill_box(Vector3i(x, G - 1, z), Vector3i(x, G - 1, z), Blocks.PLANK)
+	for x in range(37, 40):
+		for z in range(76, 104):
+			if h_at(x, z) < 0:
+				world.fill_box(Vector3i(x, G, z), Vector3i(x, G + 3, z), Blocks.AIR)
+	var c := CAMP
+	# 营地地面：铺路石 + 松散的废料
+	for z in range(c.z - 6, c.z + 7):
+		for x in range(c.x - 6, c.x + 7):
+			if h_at(x, z) == G and Vector2(x - c.x, z - c.z).length() < 6.5:
+				world.fill_box(Vector3i(x, G - 1, z), Vector3i(x, G - 1, z), Blocks.PAVING if (x + z) % 5 else Blocks.TILE)
+	# 笼子：金属栏杆 + 顶棚，里面是种子方块
+	for z in range(c.z - 1, c.z + 2):
+		for x in range(c.x - 1, c.x + 2):
+			if x == c.x and z == c.z:
+				continue
+			for y in range(G, G + 3):
+				var cell := Vector3i(x, y, z)
+				if (x + z) % 2 == 0 or y == G + 2:
+					world.fill_box(cell, cell, Blocks.METAL)
+					cage_cells.append(cell)
+	for z in range(c.z - 1, c.z + 2):
+		for x in range(c.x - 1, c.x + 2):
+			var roof := Vector3i(x, G + 3, z)
+			world.fill_box(roof, roof, Blocks.HULL_DARK)
+			cage_cells.append(roof)
+	# 一圈残破的废铁墙（锈块兽搭的）
+	for k in 14:
+		var a := k * TAU / 14.0
+		if k % 4 == 1:
+			continue
+		var x := int(c.x + cos(a) * 8.5)
+		var z := int(c.z + sin(a) * 8.5)
+		if h_at(x, z) != G:
+			continue
+		var hh := 1 + (k * 7) % 3
+		world.fill_box(Vector3i(x, G, z), Vector3i(x, G + hh - 1, z), Blocks.HULL_DARK if k % 2 else Blocks.METAL)
+	# 木箱堆：炮台躲在后面
+	world.fill_box(Vector3i(c.x - 2, G, c.z + 6), Vector3i(c.x + 2, G + 1, c.z + 6), Blocks.CRATE)
+	world.fill_box(Vector3i(c.x - 6, G, c.z - 3), Vector3i(c.x - 5, G + 1, c.z - 2), Blocks.CRATE)
+	world.fill_box(Vector3i(c.x + 5, G, c.z + 2), Vector3i(c.x + 5, G, c.z + 3), Blocks.CRATE)
+	# 瞭望塔
+	var tw := Vector3i(c.x + 7, G, c.z - 5)
+	if h_at(tw.x, tw.z) == G:
+		world.fill_box(tw, tw + Vector3i(0, 5, 0), Blocks.HULL_DARK)
+		world.fill_box(tw + Vector3i(-1, 6, -1), tw + Vector3i(1, 6, 1), Blocks.PLANK)
+		world.fill_box(tw + Vector3i(0, 7, 0), tw + Vector3i(0, 7, 0), Blocks.LAMP)
+	for l in [Vector3i(c.x - 4, G, c.z - 6), Vector3i(c.x + 4, G, c.z + 5)]:
+		if h_at(l.x, l.z) == G:
+			lamp_post(l)
+
+# ================================================================ 殖民地遗迹：断掉的环形天线和单轨
+
+func _ruins() -> void:
+	# E 高台南侧：半埋在土里的巨大环形天线（竖着的半圆拱，顶上断了一截）
+	var ac := Vector3(97.0, G + 5.0, 61.0)
+	for z in range(51, 72):
+		for y in range(G + 6, G + 16):
+			var d := Vector2(z - ac.z, (y - ac.y) * 1.0).length()
+			if absf(d - 8.0) <= 0.75 and not (y > G + 12 and z > 60 and z < 64):
+				for x in [96, 97]:
+					if h_at(x, z) >= G + 6 or y > G + 6:
+						world.fill_box(Vector3i(x, y, z), Vector3i(x, y, z), Blocks.HULL if (y + z) % 4 else Blocks.HULL_DARK)
+	# 散落的碎片
+	for p in [Vector3i(99, G + 6, 58), Vector3i(94, G + 6, 64), Vector3i(100, G + 6, 63)]:
+		if h_at(p.x, p.z) == G + 6:
+			world.fill_box(p, p + Vector3i(1, 0, 0), Blocks.HULL)
+	# 旧单轨：从 E 高台东边伸向虚空，在半空断掉
+	for x in range(99, 121):
+		world.fill_box(Vector3i(x, G + 10, 55), Vector3i(x, G + 10, 56), Blocks.HULL_DARK)
+		if x % 2 == 0:
+			world.fill_box(Vector3i(x, G + 11, 55), Vector3i(x, G + 11, 55), Blocks.TRACK)
+	for x in [100, 110]:
+		var h := h_at(x, 55)
+		var y0 := h if h >= 0 else G + 2
+		world.fill_box(Vector3i(x, y0, 55), Vector3i(x, G + 9, 56), Blocks.HULL)
+	# 断口处垂下来的一截
+	for k in 5:
+		world.fill_box(Vector3i(121 + k / 2, G + 9 - k, 55), Vector3i(121 + k / 2, G + 9 - k, 56), Blocks.HULL_DARK)
+
+# ================================================================ 岛边的岩石：让岛的轮廓更丰富，也挡一挡别滚下去
+
+const OUTCROP_KEEP := [
+	Rect2i(10, 62, 22, 22),     # 坠毁坑、坑口
+	Rect2i(40, 48, 38, 46),     # 砂塔深沟、坡道
+	Rect2i(60, 42, 12, 32),     # 温室入口
+	Rect2i(66, 46, 26, 12),     # 通往 E 的小桥
+	Rect2i(84, 36, 18, 22),     # 松土和洞口
+	Rect2i(92, 16, 20, 66),     # 重构塔、光桥
+	Rect2i(0, 40, 24, 26),      # 古树
+	Rect2i(32, 76, 12, 30),     # 木桥
+]
+
+func _outcrops() -> void:
+	var n := FastNoiseLite.new()
+	n.seed = 44
+	n.frequency = 0.21
+	for key in heights.keys():
+		var x: int = key.x
+		var z: int = key.y
+		var h: int = heights[key]
+		var keep := false
+		for r in OUTCROP_KEEP:
+			if (r as Rect2i).has_point(Vector2i(x, z)):
+				keep = true
+				break
+		if keep:
+			continue
+		# 离岛边 2 格以内
+		var near_edge := false
+		for dz in range(-2, 3):
+			for dx in range(-2, 3):
+				if h_at(x + dx, z + dz) < 0:
+					near_edge = true
+		if not near_edge:
+			continue
+		var v := n.get_noise_2d(x, z)
+		if v < 0.12 or world.get_block(Vector3i(x, h, z)) != Blocks.AIR:
+			continue
+		var hh := 1 + int((v - 0.12) * 9.0)
+		hh = mini(hh, 4)
+		for y in range(h, h + hh):
+			var t := Blocks.ROCK if (y - h) < hh - 1 else Blocks.MOSS
+			if (x * 3 + z) % 5 == 0:
+				t = Blocks.CLIFF_B
+			world.fill_box(Vector3i(x, y, z), Vector3i(x, y, z), t)
+
+## 从玩法浮岛边缘流下去的瀑布（米）
+func _island_falls() -> Array:
+	var out := []
+	for spec in [[58, 30, Vector2i(0, -1)], [30, 60, Vector2i(-1, 0)], [100, 30, Vector2i(1, 0)], [60, 80, Vector2i(0, 1)]]:
+		var x: int = spec[0]
+		var z: int = spec[1]
+		var d: Vector2i = spec[2]
+		# 沿方向走到岛边
+		var last := Vector2i(-1, -1)
+		for k in 80:
+			var q := Vector2i(x, z) + d * k
+			if h_at(q.x, q.y) >= 0:
+				last = q
+			elif last.x >= 0:
+				break
+		if last.x < 0:
+			continue
+		var h := h_at(last.x, last.y)
+		var top := world.voxel_center(Vector3i(last.x, h - 2, last.y)) + Vector3(d.x, 0, d.y) * 0.3
+		out.append([top, Vector3(d.x, 0, d.y)])
+	return out
+
+func _tower_on() -> void:
+	world.set_block(TOWER_TOP, Blocks.RECEIVER_ON)
+	if vista and not is_instance_valid(_beam):
+		_beam = vista.add_beam(world.voxel_center(TOWER_TOP) + Vector3.UP * 0.3, Color(0.45, 1.0, 0.8), 500.0, 0.9)
+
 # ================================================================ 机关、收集品、对话
 
 func _v(c: Vector3i) -> Vector3:
@@ -540,6 +899,61 @@ func _enemy_near(x: int, z: int) -> void:
 
 var seeds: Dictionary = {}
 
+func _spawn_enemy(e: Node3D, cell: Vector3i, lift := 0.0) -> Node3D:
+	add_child(e)
+	e.global_position = world.voxel_top(cell + Vector3i.DOWN) + Vector3.UP * (0.05 + lift)
+	e.rotation.y = randf() * TAU
+	enemies.append(e)
+	return e
+
+func _camp_logic() -> void:
+	var c := CAMP
+	camp_enemies = [
+		_spawn_enemy(Scrapling.new(), Vector3i(c.x - 5, G, c.z - 4)),
+		_spawn_enemy(Scrapling.new(), Vector3i(c.x + 4, G, c.z + 3)),
+		_spawn_enemy(Spikeshell.new(), Vector3i(c.x - 4, G, c.z + 4)),
+		_spawn_enemy(Rustfly.new(), Vector3i(c.x + 3, G, c.z - 3), 2.6),
+		_spawn_enemy(Mortar.new(), Vector3i(c.x, G, c.z + 8)),
+	]
+	for e in camp_enemies:
+		e.connect("defeated", _on_camp_enemy_defeated)
+	# 笼子里的种子方块
+	var sc := SeedCube.new()
+	sc.seed_id = "gh_s4"
+	sc.line_index = 3
+	add_child(sc)
+	sc.global_position = world.voxel_top(c + Vector3i.DOWN)
+	seeds["gh_s4"] = sc
+	talk(Vector3i(34, G, 80), Vector3i(42, G + 4, 88), [
+		"南边那座小岛……是锈块兽的营地？它们把一个种子方块关在笼子里！",
+		"打倒营地里所有的锈蚀机器，笼子就会打开。那只刺壳虫背上全是刺——等它把刺收起来再撞。",
+	])
+	talk(Vector3i(c.x - 9, G, c.z - 12), Vector3i(c.x + 9, G + 4, c.z - 8), [
+		"后面木箱堆后面还有一门锈炮台。看地上的红圈躲开炮弹，冲过去撞它！",
+	])
+
+func _on_camp_enemy_defeated(e: Node) -> void:
+	camp_enemies.erase(e)
+	var alive := 0
+	for x in camp_enemies:
+		if is_instance_valid(x) and not x.is_queued_for_deletion():
+			alive += 1
+	if alive > 0:
+		FloatText.spawn(self, world.voxel_center(CAMP + Vector3i(0, 4, 0)), "还剩 %d 个" % alive, Color("ffd166"), 56, 1.4)
+		return
+	# 全部打倒：笼子崩开
+	Sfx.play("unlock", Vector3.INF, 0.0, 0.0)
+	Sfx.play("success", Vector3.INF, -4.0, 0.0)
+	GameState.say("营地清理干净了！笼子的锁也坏了——去打开种子方块吧。")
+	var i := 0
+	for cell in cage_cells:
+		i += 1
+		get_tree().create_timer(0.2 + i * 0.05).timeout.connect(func() -> void:
+			if world.get_block(cell) != Blocks.AIR:
+				world.break_fx_at(world.voxel_center(cell), world.get_block(cell), false)
+				world.set_block(cell, Blocks.AIR))
+	SaveGame.set_flag("gh_camp")
+
 ## 在 (x, z) 附近找一块平地放种子方块
 func _seed(id: String, x: int, z: int, line: int) -> void:
 	for r in range(0, 6):
@@ -565,8 +979,29 @@ func _logic() -> void:
 	_enemy_near(96, 36)
 	talk(Vector3i(30, G, 58), Vector3i(44, G + 4, 70), [
 		"小心，那是锈块兽——被异变侵蚀的维护机器。它正面有盾，正面撞会被弹开。",
-		"等它冲锋撞空、晕头转向的时候，或者绕到侧面、背后，再按{ability}冲撞！",
+		"等它冲锋撞空、晕头转向的时候，或者绕到侧面、背后，再按{ability}冲撞！跳起来踩它的头也行。",
+		"还有个办法：停下来按住{ability}原地蓄力，松开就冲出去——蓄满了连盾牌都能撞碎。",
 	])
+	# E 高台上空的锈蜂
+	var fly := _spawn_enemy(Rustfly.new(), Vector3i(92, G + 6, 60), 2.8)
+	talk(Vector3i(84, G + 6, 54), Vector3i(96, G + 10, 66), [
+		"天上嗡嗡响的是锈蜂。它会先盯住你，地上出现红圈就是它要俯冲了——快躲开！",
+		"扎进地里的锈蜂会卡住一会儿，这时候撞它。跳起来撞它、踩它也可以。",
+	])
+	fly.set("sight", 7.0)
+	# 古树
+	GameState.seeds_total = 4
+	talk(Vector3i(TREE_C.x - 9, G, TREE_C.y + 3), Vector3i(TREE_C.x + 9, G + 4, TREE_C.y + 10), [
+		"这棵古树比殖民地还老——艾拉博士说，方舟引擎第一次试验就是在它的树荫下做的。",
+		"树枝一圈一圈往上长……按{jump}跳上去看看？掉下来也没关系。",
+	])
+	zone(TreasureChest, deck_cell + Vector3i(1, 0, 1), deck_cell + Vector3i(1, 1, 1), {"chest_id": "gh_tree", "coins": 30, "energy": 4})
+	talk(deck_cell + Vector3i(-4, 0, -4), deck_cell + Vector3i(4, 3, 4), [
+		"好高！……看东北边，云海尽头那座高塔——那是方舟星核塔，整颗星球的心脏。",
+		"五座重构塔都亮起来的时候，它才会醒。……艾拉，你在那里吗？",
+	])
+	# 锈蚀营地
+	_camp_logic()
 	GameState.set_objective(0, "离开坠毁坑（东边有坡道）", _v(Vector3i(26, G, 74)))
 	GameState.form_unlocked.connect(func(i: int) -> void:
 		if i == MorphBall.DRILL:
@@ -591,7 +1026,7 @@ func _logic() -> void:
 	talk(Vector3i(21, G - 2, 70), Vector3i(26, G + 3, 78), [
 		"坑口被木箱堵住了。别减速，直接撞上去——速度就是力量。",
 	])
-	_fragment("gh_1", Vector3i(12, G - 2, 79), {"log_text": "艾拉·林，研究日志 #12：方舟引擎第一次成功——一块岩石被拆成方块，又被原样拼了回来。它摸起来还是暖的。"})
+	_fragment("gh_1", deck_cell + Vector3i(-2, 0, 0), {"log_text": "艾拉·林，研究日志 #12：方舟引擎第一次成功——一块岩石被拆成方块，又被原样拼了回来。它摸起来还是暖的。"})
 	coin_line(Vector3i(20, G - 2, 74), Vector3i(24, G - 1, 74), 3)
 	coin_line(Vector3i(29, G, 74), Vector3i(44, G, 74), 6)
 	coin_line(Vector3i(33, G, 64), Vector3i(33, G, 67), 2)
@@ -663,6 +1098,13 @@ func apply_save(d: Dictionary) -> void:
 			seeds[id].queue_free()
 			GameState.seeds += 1
 	GameState.seeds_changed.emit(GameState.seeds)
+	if bool((d.get("flags", {}) as Dictionary).get("gh_camp", false)):
+		for e in camp_enemies:
+			if is_instance_valid(e):
+				e.queue_free()
+		camp_enemies.clear()
+		for cell in cage_cells:
+			world.set_block(cell, Blocks.AIR)
 	if GameState.unlocked_forms[MorphBall.DRILL] and is_instance_valid(form_core):
 		form_core.queue_free()
 		Music.set_default("bright")
@@ -796,9 +1238,9 @@ func _build_bridge(instant := false) -> void:
 				world.set_block(cell[0], Blocks.CRYSTAL)
 			else:
 				world.set_ramp(cell[0], Blocks.CRYSTAL, cell[1])
-		world.set_block(Vector3i(100, G + 2 + 13, 24), Blocks.RECEIVER_ON)
+		_tower_on()
 		return
-	world.set_block(Vector3i(100, G + 2 + 13, 24), Blocks.RECEIVER_ON)
+	_tower_on()
 	GameState.say("第一座重构塔……重新上线了！光桥正在展开——终点浮岛上是这片群岛的引擎节点。")
 	GameState.set_objective(9, "沿光桥登上终点浮岛", _v(Vector3i(104, G + 11, 81)))
 	SaveGame.set_flag("gh_bridge")

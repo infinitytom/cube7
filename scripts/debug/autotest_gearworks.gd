@@ -79,8 +79,8 @@ func grab(id: String) -> bool:
 func _run() -> void:
 	await wait(1.0)
 	print("===== 第二章 整关测试 =====")
-	check(enemy_count == 3, "关卡里放了 %d 只锈块兽" % enemy_count)
-	check(L.seeds.size() == 3 and L.fragments.size() == 3, "3 个种子方块、3 块记忆碎片")
+	check(enemy_count >= 10, "关卡里放了 %d 个敌人（另有 Boss）" % enemy_count)
+	check(L.seeds.size() == 4 and L.fragments.size() == 3, "4 个种子方块、3 块记忆碎片")
 	check(GameState.unlocked_forms[MorphBall.DRILL] and not GameState.unlocked_forms[MorphBall.BUBBLE], "开局：滚球 + 钻头，气泡未解锁")
 
 	# 1. 枯荆棘：撞不开、钻不动
@@ -258,12 +258,38 @@ func _run() -> void:
 			break
 	check(blown and W.get_block(Vector3i(bw, AreaGearworks.WALK_Y + 2, 61)) == Blocks.AIR, "燃料桶爆炸，炸开加固墙")
 	await wait(1.0)
-	# 8. 重构塔
-	await tp(Vector3i(bw - 2, AreaGearworks.WALK_Y + 1, 61))
-	await go(Vector2(0, -1), 3.0)
+	# 8. Boss：进场触发；晕眩时撞背后的核心，三下打倒
+	check(not GameState.level_complete, "Boss 没打倒之前不能完成章节")
+	await tp(Vector3i(bw + 6, AreaGearworks.WALK_Y + 1, 61))
+	await wait(0.6)
+	check(is_instance_valid(L.boss) and L.boss.active, "走进场地，熔炉守卫开始战斗")
+	var hits := 0
+	for round in 3:
+		if not is_instance_valid(L.boss):
+			break
+		L.boss.ai = false
+		L.boss.debug_daze()
+		var bp := L.boss.global_position
+		var back := L.boss.global_basis.z
+		P.apply_form(MorphBall.BALL, false)
+		P.teleport(bp + back * 2.4 + Vector3.UP * 0.6)
+		await wait(0.2)
+		P.linear_velocity = -back * 7.0
+		var hp0: int = L.boss.hp
+		for k in 40:
+			await get_tree().physics_frame
+			if not is_instance_valid(L.boss) or L.boss.hp < hp0:
+				hits += 1
+				break
+		await wait(1.2)
+	check(not is_instance_valid(L.boss) and L.boss_done, "晕眩时撞核心三下，打倒熔炉守卫（命中 %d）" % hits)
+	await wait(1.5)
+	# 9. 重构塔
+	await tp(AreaGearworks.TOWER + Vector3i(-7, 0, 0))
+	await go(Vector2(0, -1), 2.0)
 	await wait(1.0)
 	check(GameState.level_complete, "到达第二座重构塔，章节完成（x=%d）" % vx(P.global_position).x)
-	print("===== 金币 %d · 碎片 %d/3 · 噗噗 %d/3 =====" % [GameState.coins, GameState.fragments, GameState.seeds])
+	print("===== 金币 %d · 碎片 %d/3 · 噗噗 %d/%d =====" % [GameState.coins, GameState.fragments, GameState.seeds, GameState.seeds_total])
 	if fails.is_empty():
 		print("===== 第二章整关测试全部通过 =====")
 	else:

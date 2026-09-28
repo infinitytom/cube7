@@ -47,6 +47,35 @@ func aerial(name: String, from: Vector3, to: Vector3, wait := 1.0) -> void:
 
 func _run() -> void:
 	await get_tree().create_timer(1.5).timeout
+	if OS.get_cmdline_user_args().has("--enemies"):
+		var lv: Node3D = main.level
+		var list := [Scrapling.new(), Rustfly.new(), Spikeshell.new(), Mortar.new(), FurnaceWarden.new()]
+		var i := 0
+		for e in list:
+			e.set("ai", false)
+			lv.add_child(e)
+			e.global_position = W.voxel_top(Vector3i(12 + i * 4, 3, 30)) + Vector3.UP * (1.2 if e is Rustfly else 0.05)
+			e.rotation.y = -PI / 2.0 - 0.5
+			i += 1
+		P.debug_override = true
+		P.teleport(W.voxel_top(Vector3i(8, 3, 36)) + Vector3.UP * 0.5)
+		await get_tree().create_timer(1.0).timeout
+		await aerial("e01_lineup", Vector3(6, 8, 42), Vector3(20, 4, 30), 1.0)
+		await aerial("e02_close", Vector3(12, 6, 36), Vector3(16, 4, 30), 0.5)
+		await aerial("e03_boss", Vector3(22, 8, 38), Vector3(28, 5, 30), 0.5)
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--gw2"):
+		var G := AreaGearworks.G
+		await aerial("w01_overview", Vector3(-30, 80, 180), Vector3(70, 22, 55), 2.0)
+		await aerial("w02_dock", Vector3(4, G + 8, 100), Vector3(40, G + 4, 70), 1.0)
+		await aerial("w03_yard", Vector3(50, G + 14, 30), Vector3(80, G + 4, 60), 1.0)
+		await aerial("w04_arena", Vector3(96, G + 20, 84), Vector3(116, G + 10, 60), 1.0)
+		await aerial("w05_chimney", Vector3(56, G + 20, 70), Vector3(72, G + 20, 46), 1.0)
+		await shot("w06_hall", Vector3i(64, G, 76), -PI / 2.0 + 0.4, -0.25, false, 1.5)
+		await shot("w07_walk", Vector3i(88, AreaGearworks.WALK_Y + 1, 61), -PI / 2.0, -0.2, false, 1.5)
+		get_tree().quit()
+		return
 	if main.level is AreaGearworks:
 		var G := AreaGearworks.G
 		await aerial("g00_overview", Vector3(-10, 70, 140), Vector3(60, 22, 64), 3.0)
@@ -58,6 +87,25 @@ func _run() -> void:
 		await shot("g06_barricade", Vector3i(24, G, 76), -PI / 2.0 + 0.2, -0.25, false, 2.0)
 		W.fire.ignite_sphere(W.voxel_center(Vector3i(30, G + 1, 77)), 1.0)
 		await shot("g07_fire", Vector3i(25, G, 77), -PI / 2.0 + 0.15, -0.2, false, 3.0)
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--gh2"):
+		var G := AreaGreenhouse.G
+		await aerial("h01_overview", Vector3(-30, 70, 200), Vector3(60, 22, 60), 2.0)
+		await aerial("h02_tree", Vector3(40, G + 6, 80), Vector3(10, G + 16, 52), 1.0)
+		await aerial("h03_camp", Vector3(60, G + 16, 130), Vector3(34, G, 108), 1.0)
+		await aerial("h04_tower", Vector3(80, G + 10, 50), Vector3(100, G + 20, 24), 1.0)
+		await shot("h05_spawn", Vector3i(19, G - 2, 74), -0.75, -0.3, false, 1.5)
+		await shot("h06_deck", main.level.deck_cell, 0.9, -0.2, false, 1.5)
+		await aerial("h07_ruins", Vector3(80, G + 14, 80), Vector3(100, G + 8, 58), 1.0)
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--vista"):
+		await aerial("v01_wide", Vector3(-40, 60, 170), Vector3(64, 20, 40), 2.0)
+		await aerial("v02_north", Vector3(40, 30, 110), Vector3(60, 30, -100), 1.0)
+		await aerial("v03_east", Vector3(20, 34, 60), Vector3(300, 40, -300), 1.0)
+		await aerial("v04_west", Vector3(150, 40, 60), Vector3(-100, 20, 30), 1.0)
+		await aerial("v05_under", Vector3(-30, -10, 150), Vector3(64, 10, 50), 1.0)
 		get_tree().quit()
 		return
 	if main.level is AreaGreenhouse and OS.get_cmdline_user_args().has("--quick"):

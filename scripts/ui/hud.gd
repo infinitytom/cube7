@@ -160,8 +160,8 @@ func _show_clear() -> void:
 	SaveGame.write()
 	var rows := [
 		["coin", UIKit.ACCENT2, "金币", str(GameState.coins)],
-		["pupu", Color("7dffc8"), "救出噗噗", "%d / 3" % GameState.seeds],
-		["fragment", Color("c89bff"), "记忆碎片", "%d / 3" % GameState.fragments],
+		["pupu", Color("7dffc8"), "救出噗噗", "%d / %d" % [GameState.seeds, GameState.seeds_total]],
+		["fragment", Color("c89bff"), "记忆碎片", "%d / %d" % [GameState.fragments, GameState.fragments_total]],
 		["save", UIKit.ACCENT, "游戏时间", SaveGame.format_time(float(SaveGame.data.get("play_time", 0.0)))],
 	]
 	for r in rows:

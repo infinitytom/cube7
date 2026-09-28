@@ -8,6 +8,7 @@ enum {
 	WOOD, LEAVES, GEODE, HULL, CLIFF, PAVING, MOSS, LAMP, HULL_DARK, LOOSE, SUPPORT,
 	CLIFF_B, CLIFF_C, PINE, BLOSSOM,
 	FIRE, EMBER, COPPER, BARREL, REINFORCED, SCAFFOLD, VENT, BRAMBLE,
+	PLANK, RUST,
 	COUNT,
 }
 
@@ -60,6 +61,8 @@ const DEFS := {
 	SCAFFOLD: {"name": "木脚手架", "color": Color("c89a5b"), "impact": 5.0, "drill": true, "burn": 2.5},
 	VENT: {"name": "熔炉口", "color": Color("ffb347"), "render": Render.GLOW, "ignites": true},
 	BRAMBLE: {"name": "枯荆棘", "color": Color("6e5646"), "burn": 1.4},
+	PLANK: {"name": "木板", "color": Color("d9a066"), "drill": true, "burn": 3.0, "catch": 0.3},
+	RUST: {"name": "锈铁", "color": Color("b5653e"), "drill": true},
 	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1, "burn": 2.5},
 }
 

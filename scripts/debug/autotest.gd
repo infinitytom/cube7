@@ -199,6 +199,7 @@ func _run() -> void:
 	check(P.global_position.y > 1.5 and P.global_position.x > 45.0, "掉落后回到轨道检查点 (%.1f, %.1f, %.1f)" % [P.global_position.x, P.global_position.y, P.global_position.z])
 
 	await _enemy_tests()
+	await _combat2_tests()
 	await _chunk_test()
 	await _systems_test()
 
@@ -279,6 +280,150 @@ func _enemy_tests() -> void:
 	if is_instance_valid(e):
 		e.queue_free()
 
+
+func _spawn(e: Node3D, cell: Vector3i, ai := false) -> Node3D:
+	e.set("ai", ai)
+	L.add_child(e)
+	e.global_position = W.voxel_top(cell) + Vector3.UP * 0.05
+	await wait(0.3)
+	return e
+
+func _clear_enemies() -> void:
+	for e in get_tree().get_nodes_in_group("enemy"):
+		e.queue_free()
+	for b in get_tree().get_nodes_in_group("projectile"):
+		b.queue_free()
+	await wait(0.1)
+
+## 新的攻击手段和新敌人
+func _combat2_tests() -> void:
+	print("  —— 新战斗 ——")
+	GameState.shield = GameState.max_shield
+	# a. 踩踏：从上面落到锈块兽头上 → 踩翻 + 弹起
+	var e := await _enemy(Vector3i(44, 3, 26), PI / 2.0)
+	P.apply_form(MorphBall.BALL, false)
+	P.teleport(e.global_position + Vector3(0, 2.2, 0))
+	var bounced := false
+	for k in 60:
+		await get_tree().physics_frame
+		if is_instance_valid(e) and e.state == Scrapling.St.FLIPPED and P.linear_velocity.y > 2.0:
+			bounced = true
+			break
+	check(bounced, "踩踏：落在锈块兽头上把它踩翻并弹起")
+	if is_instance_valid(e):
+		e.queue_free()
+	# b. 滚球原地蓄力冲刺：满蓄力正面撞碎盾牌
+	e = await _enemy(Vector3i(46, 3, 26), PI / 2.0)
+	await tp(Vector3i(40, 4, 26), Vector3.ZERO, MorphBall.BALL)
+	await wait(0.3)
+	P.debug_input = Vector2(0, -0.2)
+	await wait(0.05)
+	P.debug_ability = true
+	P.debug_ability_pressed = true
+	await wait(1.1)
+	P.debug_input = Vector2.ZERO
+	var charged := P._charging
+	P.debug_ability = false
+	await wait(1.2)
+	check(charged and not is_instance_valid(e), "原地蓄力冲刺：满蓄力正面撞碎锈块兽的盾牌")
+	await _clear_enemies()
+	# c. 锈蜂：发现 PIX → 俯冲；气浪把它打落，落地后撞碎
+	var fly := await _spawn(Rustfly.new(), Vector3i(46, 7, 26), false) as Rustfly
+	await tp(Vector3i(44, 4, 26), Vector3.ZERO, MorphBall.BUBBLE)
+	await wait(0.2)
+	P.debug_ability_pressed = true
+	await wait(0.6)
+	check(is_instance_valid(fly) and fly.stun_t > 0.0, "气浪把锈蜂打落（晕眩 %.1f 秒）" % (fly.stun_t if is_instance_valid(fly) else -1.0))
+	P.apply_form(MorphBall.BALL, false)
+	if is_instance_valid(fly):
+		await tp(W.world_to_voxel(fly.global_position) + Vector3i(-3, 0, 0), Vector3(6, 0, 0), MorphBall.BALL)
+		P.debug_input = Vector2(0, -1)
+		await wait(1.0)
+		P.debug_input = Vector2.ZERO
+	check(not is_instance_valid(fly), "晕在地上的锈蜂被滚球撞碎")
+	await _clear_enemies()
+	# c2. 锈蜂 AI：俯冲后扎在地上
+	fly = await _spawn(Rustfly.new(), Vector3i(48, 7, 26), true) as Rustfly
+	await tp(Vector3i(44, 4, 26), Vector3.ZERO, MorphBall.BALL)
+	var stuck := false
+	for k in 60:
+		await wait(0.1)
+		if is_instance_valid(fly) and fly.state == Rustfly.St.STUCK:
+			stuck = true
+			break
+	check(stuck, "锈蜂发现 PIX 后俯冲，扎在地上")
+	await _clear_enemies()
+	GameState.shield = GameState.max_shield
+	# d. 刺壳虫：尖刺竖起时冲撞会被扎；钻头直接钻穿
+	await wait(1.6)
+	var sp := await _spawn(Spikeshell.new(), Vector3i(46, 3, 26), false) as Spikeshell
+	await tp(Vector3i(41, 4, 26), Vector3(8, 0, 0), MorphBall.BALL)
+	var sh0 := GameState.shield
+	P.debug_input = Vector2(0, -1)
+	await wait(0.8)
+	P.debug_input = Vector2.ZERO
+	check(is_instance_valid(sp) and GameState.shield < sh0, "刺壳虫尖刺竖起时撞上去会被扎（护盾 %d→%d）" % [sh0, GameState.shield])
+	await wait(1.5)
+	P.apply_form(MorphBall.DRILL, false)
+	if is_instance_valid(sp):
+		await tp(W.world_to_voxel(sp.global_position) + Vector3i(-2, 1, 0), Vector3.ZERO, MorphBall.DRILL)
+		P.debug_input = Vector2(0, -1)
+		P.debug_ability = true
+		await wait(1.5)
+		P.debug_input = Vector2.ZERO
+		P.debug_ability = false
+	check(not is_instance_valid(sp), "钻头无视尖刺，钻穿刺壳虫")
+	await _clear_enemies()
+	GameState.shield = GameState.max_shield
+	# e. 锈炮台：气浪把锈弹打回去炸它自己
+	var mo := await _spawn(Mortar.new(), Vector3i(50, 3, 26), true) as Mortar
+	await tp(Vector3i(42, 4, 26), Vector3.ZERO, MorphBall.BUBBLE)
+	var hp0 := mo.hp
+	var reflected := false
+	for k in 240:
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		for b in get_tree().get_nodes_in_group("projectile"):
+			if (b as Node3D).global_position.distance_to(P.global_position) < 3.0 and not b.reflected:
+				P.debug_ability_pressed = true
+				reflected = true
+				print("    锈弹距离 %.1f，按下气浪（冷却 %.2f）" % [(b as Node3D).global_position.distance_to(P.global_position), P._ability_cd])
+		if reflected:
+			break
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	for b in get_tree().get_nodes_in_group("projectile"):
+		print("    锈弹 reflected=", b.reflected, " pos=", b.global_position, " 炮台=", mo.global_position)
+	await wait(2.0)
+	check(reflected and (not is_instance_valid(mo) or mo.hp < hp0), "气浪把锈弹打回去，炸到炮台（hp %d→%d）" % [hp0, mo.hp if is_instance_valid(mo) else 0])
+	await _clear_enemies()
+	GameState.shield = GameState.max_shield
+	# f. 泡泡弹：困住锈块兽，飘起来
+	e = await _enemy(Vector3i(46, 3, 26), PI / 2.0)
+	await tp(Vector3i(41, 4, 26), Vector3.ZERO, MorphBall.BUBBLE)
+	P.debug_input = Vector2(0, -0.2)
+	await wait(0.1)
+	P.debug_input = Vector2.ZERO
+	P.debug_ability = true
+	P.debug_ability_pressed = true
+	await wait(0.7)
+	P.debug_ability = false
+	var y0 := e.global_position.y
+	await wait(0.6)
+	check(is_instance_valid(e) and e.state == Scrapling.St.FLIPPED and e.global_position.y > y0 - 0.5, "泡泡弹困住锈块兽（翻倒）")
+	await _clear_enemies()
+	# g. 扔物件砸中敌人
+	e = await _enemy(Vector3i(46, 3, 26), PI / 2.0)
+	var it := UsableItem.new()
+	L.add_child(it)
+	it.global_position = e.global_position + Vector3(-2.0, 1.0, 0)
+	it.set_held(false)
+	it.linear_velocity = Vector3(5.0, 1.5, 0)
+	await wait(1.0)
+	check(not is_instance_valid(e) or e.state == Scrapling.St.FLIPPED, "扔出的物件砸翻锈块兽")
+	it.queue_free()
+	await _clear_enemies()
+	GameState.shield = GameState.max_shield
 
 func _chunk_test() -> void:
 	print("  —— 体素碎块 ——")

@@ -62,8 +62,8 @@ func _run() -> void:
 	await wait(1.0)
 	check(P.grounded, "出生点：球停在坑底")
 	check(GameState.unlocked_forms == [true, false, false], "开局只有滚球形态")
-	check(enemy_count == 2, "关卡里放了 %d 只锈块兽" % enemy_count)
-	check(L.seeds.size() == 3, "关卡里放了 %d 个种子方块" % L.seeds.size())
+	check(enemy_count >= 7, "关卡里放了 %d 个敌人" % enemy_count)
+	check(L.seeds.size() == 4, "关卡里放了 %d 个种子方块" % L.seeds.size())
 	for id in L.seeds:
 		print("    种子方块 ", id, " 位于体素 ", W.world_to_voxel(L.seeds[id].global_position))
 	# 冲撞打开第一个种子方块，救出噗噗
@@ -208,6 +208,11 @@ func _run() -> void:
 	P.apply_form(MorphBall.DRILL, false)
 	await tp(Vector3i(73, G + 6, 52))
 	await go(Vector2(0, -1), 6.0, true)
+	if vx(P.global_position).x < 79:
+		var row := []
+		for xx in range(73, 80):
+			row.append("%d:%d/%d" % [xx, W.get_block(Vector3i(xx, G + 6, 52)), W.get_block(Vector3i(xx, G + 7, 52))])
+		print("    调试：球 ", P.global_position, " 形态 ", P.form, " 着地 ", P.grounded, " 行 ", row)
 	check(vx(P.global_position).x >= 79, "钻穿泥土墙（x=%d）" % vx(P.global_position).x)
 
 	# 8. 松土：向下钻掉进洞穴，从悬崖侧面出来
@@ -216,6 +221,17 @@ func _run() -> void:
 	await wait(1.0)
 	check(vx(P.global_position).y <= G + 3, "向下钻穿松土，掉进洞穴（y=%d）" % vx(P.global_position).y)
 	await go(Vector2(-1, 0), 5.0)
+	if vx(P.global_position).z > 42:
+		var pv2 := W.to_v(P.global_position)
+		var prof := []
+		for vz in range(pv2.z - 12, pv2.z + 4):
+			var top := -1
+			for vy in range((G + 5) * 2, (G - 1) * 2, -1):
+				if W.vget(Vector3i(pv2.x, vy, vz)) != Blocks.AIR and W.vget(Vector3i(pv2.x, vy + 1, vz)) == Blocks.AIR and vy < (G + 4) * 2:
+					top = vy
+					break
+			prof.append("%d:%d" % [vz, top])
+		print("    调试：洞里 球体素 ", pv2, " 速度 ", P.linear_velocity, " 地面 ", prof)
 	check(vx(P.global_position).z <= 42 and vx(P.global_position).y == G + 2, "穿过洞穴到达中枢塔台地（z=%d, y=%d）" % [vx(P.global_position).z, vx(P.global_position).y])
 
 	# 9. 钻开晶洞取出能量晶块

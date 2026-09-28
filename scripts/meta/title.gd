@@ -49,8 +49,8 @@ func _ready() -> void:
 	level.backdrop = true
 	level.world_path = NodePath("../VoxelWorld")
 	add_child(level)
-	level.build()
 	_golden_hour()
+	level.build()
 	_cam = Camera3D.new()
 	_cam.fov = 50.0
 	_cam.current = true
@@ -66,27 +66,11 @@ func _ready() -> void:
 
 ## 黄昏配色：深蓝天顶、暖橙地平线、低角度暖光。只影响标题画面。
 func _golden_hour() -> void:
-	var we := get_node_or_null("WorldEnvironment") as WorldEnvironment
-	if we:
-		var env := we.environment.duplicate() as Environment
-		var sky := env.sky.duplicate() as Sky
-		var mat := sky.sky_material.duplicate() as ProceduralSkyMaterial
-		mat.sky_top_color = Color(0.24, 0.5, 1.0)
-		mat.sky_horizon_color = Color(1.0, 0.86, 0.74)
-		mat.ground_horizon_color = Color(1.0, 0.86, 0.74)
-		mat.ground_bottom_color = Color(0.62, 0.7, 0.9)
-		sky.sky_material = mat
-		env.sky = sky
-		env.fog_light_color = Color(1.0, 0.9, 0.8)
-		env.glow_intensity = 0.85
-		env.glow_bloom = 0.1
-		we.environment = env
+	Atmosphere.apply(self, "title")
 	var sun := get_node_or_null("Sun") as DirectionalLight3D
 	if sun:
 		# 光从镜头一侧斜照过来（侧逆光太暗），偏暖
 		sun.rotation_degrees = Vector3(-32, 90.0 - rad_to_deg(ANGLE0) + 35.0, 0)
-		sun.light_color = Color(1.0, 0.9, 0.78)
-		sun.light_energy = 1.55
 
 func _process(delta: float) -> void:
 	_t += delta

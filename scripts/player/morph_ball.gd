@@ -11,7 +11,7 @@ enum { BALL, DRILL, BUBBLE }
 ##   气泡：轻、跳得最高，空中还能再喷两次、按住跳滑翔，气浪攻击把敌人推开掀翻
 ## jump = 起跳速度（米/秒）；air_jumps = 空中额外跳跃次数；glide = 按住跳时的最大下落速度
 const FORMS: Array[Dictionary] = [
-	{"id": "ball", "name": "滚球", "ability": "冲撞", "jump_name": "跳跃（按住更高）", "color": Color("46c3ff"),
+	{"id": "ball", "name": "滚球", "ability": "冲撞 · 原地按住蓄力", "jump_name": "跳跃（按住更高）", "color": Color("46c3ff"),
 		"mass": 1.0, "shape": "sphere", "radius": 0.48, "roll": true,
 		"torque": 8.0, "ground_force": 2.5, "air_force": 3.0, "max_speed": 7.0, "boost_speed": 11.0,
 		"jump": 5.6, "air_jumps": 0, "glide": 0.0, "gravity": 1.25,
@@ -21,7 +21,7 @@ const FORMS: Array[Dictionary] = [
 		"torque": 0.0, "ground_force": 9.0, "air_force": 3.0, "max_speed": 4.0, "boost_speed": 5.5,
 		"jump": 3.8, "air_jumps": 0, "glide": 0.0, "gravity": 1.0,
 		"friction": 0.5, "bounce": 0.0, "lin_damp": 1.2, "ang_damp": 3.0},
-	{"id": "bubble", "name": "气泡", "ability": "气浪", "jump_name": "跳跃 · 空中再跳 · 按住滑翔", "color": Color("c9a6ff"),
+	{"id": "bubble", "name": "气泡", "ability": "气浪 · 按住发泡泡弹", "jump_name": "跳跃 · 空中再跳 · 按住滑翔", "color": Color("c9a6ff"),
 		"mass": 0.3, "shape": "sphere", "radius": 0.5, "roll": true,
 		"torque": 3.0, "ground_force": 4.0, "air_force": 4.5, "max_speed": 4.5, "boost_speed": 6.0,
 		"jump": 5.2, "air_jumps": 2, "glide": 1.1, "gravity": 0.45,
@@ -55,6 +55,17 @@ var _air_jumps := 0
 var _jump_rising := false
 var _invuln := 0.0
 const POUND_RADIUS := 3.0
+const CHARGE_FULL := 0.9
+const CHARGED_SPEED := 15.0
+const BUBBLE_HOLD := 0.28
+## 当前冲撞的力度（水平速度）；满蓄力冲刺时 charged_ram = true（能撞穿盾牌）
+var ram_power := 0.0
+var charged_ram := false
+var _charging := false
+var _charge_t := 0.0
+var _charge_lvl := 0
+var _bubble_hold := -1.0
+var _charge_node: MeshInstance3D
 const WAVE_RADIUS := 3.6
 
 var _ground_timer := 0.0
@@ -207,6 +218,10 @@ func apply_form(i: int, fx: bool) -> void:
 	for k in _visuals.size():
 		_visuals[k].visible = k == i
 	_pounding = false
+	_charging = false
+	_bubble_hold = -1.0
+	if _charge_node:
+		_charge_node.visible = false
 	attack = ""
 	if fx:
 		_visual_root.scale = Vector3.ONE * 0.45
@@ -420,8 +435,12 @@ func _update_attack_state(delta: float) -> void:
 		_visual_root.visible = true
 	match form:
 		BALL:
-			var fast := Vector3(linear_velocity.x, 0, linear_velocity.z).length() > 6.0
+			var hs := Vector3(linear_velocity.x, 0, linear_velocity.z).length()
+			var fast := hs > 6.0
 			attack = "ram" if _dash_t > 0.0 or fast else ""
+			ram_power = hs if attack == "ram" else 0.0
+			if _dash_t <= 0.0:
+				charged_ram = false
 		DRILL:
 			attack = "pound" if _pounding else ("drill" if _ability_held() and _ground_timer > 0.0 else "")
 		BUBBLE:
@@ -432,13 +451,33 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 	var held := _ability_held()
 	match form:
 		BALL:
-			if pressed and _ability_cd <= 0.0:
-				_ability_cd = 0.8
-				_dash_t = 0.35
-				var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
-				apply_central_impulse((_move_dir * DASH_SPEED - vh) * mass)
-				_burst(f.color)
-				Sfx.play("dash", global_position, -2.0)
+			if pressed and _ability_cd <= 0.0 and not _charging:
+				var vh0 := Vector3(linear_velocity.x, 0, linear_velocity.z)
+				if vh0.length() < 2.5 and _ground_timer > 0.0:
+					# 原地按住：蓄力（松开时冲出去，蓄得越久越快，满蓄力能撞穿锈块兽的盾牌）
+					_charging = true
+					_charge_t = 0.0
+					_charge_lvl = 0
+				else:
+					_dash(DASH_SPEED, false)
+			if _charging:
+				if held:
+					_charge_t += delta
+					linear_velocity.x *= exp(-8.0 * delta)
+					linear_velocity.z *= exp(-8.0 * delta)
+					var lvl := 0 if _charge_t < 0.3 else (1 if _charge_t < CHARGE_FULL else 2)
+					if lvl > _charge_lvl:
+						_charge_lvl = lvl
+						Sfx.play("energy", global_position, -6.0 + lvl * 2.0, 0.0, 0.8 + lvl * 0.3)
+						if lvl == 2:
+							_burst(Color("ffe066"))
+							set_mood("happy", 0.4)
+					_charge_fx(true, _charge_t)
+				else:
+					_charging = false
+					_charge_fx(false, 0.0)
+					var k := clampf((_charge_t - 0.12) / (CHARGE_FULL - 0.12), 0.0, 1.0)
+					_dash(lerpf(DASH_SPEED, CHARGED_SPEED, k), k >= 1.0)
 		DRILL:
 			if _ground_timer <= 0.0 and pressed and not _pounding:
 				# 空中下砸
@@ -455,9 +494,93 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 					_drill_timer = 0.09
 					_drill(dir)
 		BUBBLE:
-			if pressed and _ability_cd <= 0.0:
-				_ability_cd = 0.7
-				_wave()
+			# 轻点：气浪；按住再松开：泡泡弹（困住敌人）
+			if pressed and _ability_cd <= 0.0 and _bubble_hold < 0.0:
+				_bubble_hold = 0.0
+			if _bubble_hold >= 0.0:
+				if held:
+					_bubble_hold += delta
+					_charge_fx(_bubble_hold > BUBBLE_HOLD, _bubble_hold)
+				else:
+					_charge_fx(false, 0.0)
+					if _bubble_hold < BUBBLE_HOLD:
+						_wave()
+					else:
+						_shoot_bubble(clampf((_bubble_hold - BUBBLE_HOLD) / 0.6, 0.0, 1.0))
+					_bubble_hold = -1.0
+					_ability_cd = 0.45
+
+func _dash(speed: float, full: bool) -> void:
+	_ability_cd = 0.8 if not full else 0.5
+	_dash_t = 0.35 if not full else 0.55
+	charged_ram = full
+	var vh := Vector3(linear_velocity.x, 0, linear_velocity.z)
+	apply_central_impulse((_move_dir * speed - vh) * mass)
+	_burst(FORMS[BALL].color if not full else Color("ffe066"))
+	Sfx.play("dash", global_position, -2.0 + (3.0 if full else 0.0), 0.05, 1.0 if not full else 0.8)
+	if full:
+		GameState.shake.emit(0.2)
+		_ring_fx(Color("ffe066"), 1.6)
+
+## 蓄力时的光球（滚球蓄力冲刺 / 气泡蓄泡泡弹）
+func _charge_fx(on: bool, t: float) -> void:
+	if _charge_node == null:
+		_charge_node = MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.5
+		sm.height = 1.0
+		_charge_node.mesh = sm
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.albedo_color = Color(1.0, 0.9, 0.4, 0.35)
+		_charge_node.material_override = m
+		_charge_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_charge_node)
+	_charge_node.visible = on
+	if not on:
+		return
+	var m2 := _charge_node.material_override as StandardMaterial3D
+	if form == BUBBLE:
+		m2.albedo_color = Color(0.8, 0.65, 1.0, 0.35)
+		var k := clampf((t - BUBBLE_HOLD) / 0.6, 0.0, 1.0)
+		_charge_node.global_position = global_position + _move_dir * 0.7 + Vector3.UP * 0.1
+		_charge_node.scale = Vector3.ONE * (0.4 + 0.5 * k)
+	else:
+		var k2 := clampf(t / CHARGE_FULL, 0.0, 1.0)
+		m2.albedo_color = Color(1.0, 0.9, 0.4, 0.15 + 0.3 * k2) if k2 < 1.0 else Color(1.0, 0.95, 0.5, 0.35 + 0.15 * sin(t * 30.0))
+		_charge_node.position = Vector3.ZERO
+		_charge_node.scale = Vector3.ONE * (0.9 + 0.35 * k2 + 0.05 * sin(t * 40.0))
+		# 原地空转：外壳飞快地转
+		if _visuals.size() > BALL:
+			_visuals[BALL].rotate_object_local(Vector3.RIGHT, (10.0 + 30.0 * k2) * get_physics_process_delta_time())
+
+func _shoot_bubble(k: float) -> void:
+	var b := BubbleShot.new()
+	b.power = k
+	var dir := _move_dir
+	var cam := GameState.camera
+	if cam and not debug_override and _move_input().length() < 0.2:
+		var yaw: float = cam.get("yaw")
+		dir = Vector3(-sin(yaw), 0, -cos(yaw))
+	b.vel = dir.normalized() * (7.0 + k * 3.0) + Vector3.UP * 0.4
+	get_parent().add_child(b)
+	b.global_position = global_position + dir.normalized() * 0.7 + Vector3.UP * 0.15
+	Sfx.play("jump_bubble", global_position, -2.0, 0.1, 0.7)
+	_burst(FORMS[BUBBLE].color)
+
+## 踩到敌人头上：弹起来（按住跳跃弹得更高）
+func stomp_bounce() -> void:
+	_pounding = false
+	linear_velocity.y = 7.2 if _jump_held() else 5.4
+	_jumped_now = true
+	_jump_rising = true
+	_no_snap = 0.3
+	_air_jumps = int(FORMS[form].air_jumps)
+	Sfx.play("boing", global_position, -2.0, 0.08)
+	set_mood("happy", 0.5)
+	_ring_fx(FORMS[form].color, 1.0)
 
 ## 下砸落地：砸碎脚下的可破坏方块，震翻周围的敌人
 func _pound_land() -> void:
@@ -491,6 +614,11 @@ func _wave() -> void:
 	for sc in get_tree().get_nodes_in_group("seed_cube"):
 		if (sc as Node3D).global_position.distance_to(global_position) < WAVE_RADIUS:
 			sc.call("on_wave", global_position)
+	# 气浪把飞来的锈弹原路打回去
+	for b in get_tree().get_nodes_in_group("projectile"):
+		if (b as Node3D).global_position.distance_to(global_position) < WAVE_RADIUS + 0.8 and b.has_method("reflect"):
+			b.call("reflect", global_position)
+			FloatText.spawn(get_parent(), (b as Node3D).global_position + Vector3.UP * 0.5, "打回去！", Color("9fe8ff"), 44, 1.0)
 	for n in get_tree().get_nodes_in_group("usable_item"):
 		var rb := n as RigidBody3D
 		if rb and rb.global_position.distance_to(global_position) < WAVE_RADIUS and not rb.get("held"):

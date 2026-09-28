@@ -10,7 +10,7 @@ extends LevelBase
 ##   E 走廊尽头的加固墙：拿火种点燃燃料桶，炸开它 → 第二座重构塔
 ## 坐标单位为“格”（0.5 米）。
 
-const SIZE := Vector3i(124, 52, 96)
+const SIZE := Vector3i(136, 72, 104)
 const G := 22
 
 ## 浮岛：[中心 x, 中心 z, 半径, 地面高度]
@@ -25,7 +25,7 @@ const BLOBS := [
 	[91, 66, 9, G],         # C 厂房东
 	[89, 49, 9, G],         # C 储料场
 	[76, 50, 8, G],         # C 储料场西
-	[109, 61, 8, G + 10],   # D 重构塔浮岛
+	[114, 61, 13, G + 10],  # D 重构塔浮岛（Boss 场地）
 ]
 
 const SPAWN := Vector3i(12, G, 78)
@@ -41,11 +41,14 @@ const CORE := Vector3i(78, G, 68)
 const FAN_RCV := Vector3i(84, G, 62)
 const WALK_Y := G + 9                    ## 空中走廊地板所在层
 const BLAST_X := 97
-const TOWER := Vector3i(110, G + 10, 61)
+const TOWER := Vector3i(122, G + 10, 61)
+const ARENA := Vector3i(113, G + 10, 61)
+const CHIMNEY := Vector3i(72, G, 46)          ## 大烟囱（中心，格）
+const CHIMNEY_H := 26
 
 var heights := {}
 var backdrop := false
-var enemies: Array[Scrapling] = []
+var enemies: Array[Node3D] = []
 var fragments := {}
 var seeds: Dictionary = {}
 var form_core: Node
@@ -56,6 +59,10 @@ var door: PowerDoor
 var _noise := FastNoiseLite.new()
 var slab_fallen := false
 var wall_blown := false
+var vista: Vista
+var boss: FurnaceWarden
+var boss_done := false
+var _beam: Node3D
 
 func spawn_yaw() -> float:
 	return -PI / 2.0
@@ -67,6 +74,9 @@ func build() -> void:
 	world = get_node(world_path) as VoxelWorld
 	world.setup(SIZE)
 	GameState.reset_for_level([true, true, false] as Array[bool], true, 2.0, 3)
+	GameState.seeds_total = 4
+	if not backdrop:
+		Atmosphere.apply(self, "gearworks")
 	decor = Decor.new()
 	add_child(decor)
 	decor.setup(world)
@@ -81,11 +91,14 @@ func build() -> void:
 	_hall()
 	_catwalk()
 	_tower_island()
+	_chimney()
+	_outcrops()
 	world.naturalize(G + 14, [
 		AABB(Vector3(26, 0, 60), Vector3(8, 52, 32)),            # 荆棘路障
 		AABB(Vector3(42, 0, 66), Vector3(26, 52, 22)),           # 断崖两岸
 		AABB(Vector3(HALL.position.x - 2, 0, 40), Vector3(34, 52, 40)),   # 厂区、储料场
-		AABB(Vector3(96, 0, 50), Vector3(24, 52, 22)),           # 塔
+		AABB(Vector3(96, 0, 44), Vector3(40, 72, 34)),           # 塔和 Boss 场地
+		AABB(Vector3(66, 0, 40), Vector3(12, 72, 12)),           # 大烟囱
 	])
 	world.rebuild_all()
 	scatter_decor(Vector3i(0, G - 3, 0), Vector3i(SIZE.x - 1, G + 14, SIZE.z - 1), 0.22, 0.05, 0.02)
@@ -93,6 +106,8 @@ func build() -> void:
 	_dress()
 	world.flush_dirty()
 	world.fire.scan_sources(Vector3i(0, G - 2, 0), Vector3i(SIZE.x - 1, G + 16, SIZE.z - 1))
+	vista = Vistas.gearworks(self, world, _island_falls())
+	_gears()
 	if backdrop:
 		return
 	_logic()
@@ -380,21 +395,139 @@ func _catwalk() -> void:
 
 func _tower_island() -> void:
 	var t := TOWER
-	_pave(t.x - 4, t.z - 4, t.x + 4, t.z + 4, Blocks.PAVING)
-	# 塔基
-	for z in range(t.z - 2, t.z + 3):
-		for x in range(t.x - 2, t.x + 3):
-			if Vector2(x - t.x, z - t.z).length() <= 2.4:
-				world.fill_box(Vector3i(x, t.y, z), Vector3i(x, t.y, z), Blocks.HULL)
-	# 塔身：白色外壳，每隔几层一圈水晶
-	for y in range(t.y + 1, t.y + 17):
-		var ring := (y - t.y) % 5 == 0
-		for z in range(t.z - 1, t.z + 2):
-			for x in range(t.x - 1, t.x + 2):
-				if x == t.x and z == t.z:
+	_pave(ARENA.x - 12, ARENA.z - 12, ARENA.x + 12, ARENA.z + 12, Blocks.TILE)
+	# Boss 场地：一圈铺装 + 四根石柱（熔炉守卫冲锋撞上会碎）
+	for z in range(ARENA.z - 9, ARENA.z + 10):
+		for x in range(ARENA.x - 9, ARENA.x + 10):
+			var d := Vector2(x - ARENA.x, z - ARENA.z).length()
+			if h_at(x, z) == G + 10 and absf(d - 8.5) < 0.6:
+				world.fill_box(Vector3i(x, G + 9, z), Vector3i(x, G + 9, z), Blocks.HULL_DARK)
+	for a in [0.785, 2.356, 3.927, 5.498]:
+		var px := int(ARENA.x + cos(a) * 5.5)
+		var pz := int(ARENA.z + sin(a) * 5.5)
+		world.fill_box(Vector3i(px, G + 10, pz), Vector3i(px + 1, G + 14, pz + 1), Blocks.ROCK)
+		world.fill_box(Vector3i(px, G + 15, pz), Vector3i(px + 1, G + 15, pz + 1), Blocks.LAMP)
+	# 场地边缘一圈矮栏（防止被撞飞掉下去），西边入口、东边塔前留口
+	for key in heights.keys():
+		if heights[key] != G + 10:
+			continue
+		var x: int = key.x
+		var z: int = key.y
+		if x <= ARENA.x - 10 and z >= 58 and z <= 64:
+			continue
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if h_at(x + d.x, z + d.y) < G + 10:
+				world.fill_box(Vector3i(x, G + 10, z), Vector3i(x, G + 10, z), Blocks.RUST if (x + z) % 3 else Blocks.HULL_DARK)
+				break
+	# 重构塔：和第一座一样高，塔身带三圈悬浮环
+	world.fill_box(t + Vector3i(-2, 0, -2), t + Vector3i(2, 1, 2), Blocks.HULL_DARK)
+	world.fill_box(t + Vector3i(-1, 2, -1), t + Vector3i(1, 29, 1), Blocks.HULL)
+	for y in range(5, 28, 5):
+		world.fill_box(t + Vector3i(-1, y, -1), t + Vector3i(1, y, 1), Blocks.CRYSTAL if y % 10 == 0 else Blocks.HULL_DARK)
+	for ring in [[12, 3], [20, 3], [26, 2]]:
+		var ry: int = ring[0]
+		var rr: int = ring[1]
+		for dz in range(-rr, rr + 1):
+			for dx in range(-rr, rr + 1):
+				if maxi(absi(dx), absi(dz)) == rr:
+					world.fill_box(t + Vector3i(dx, ry, dz), t + Vector3i(dx, ry, dz), Blocks.LAMP if absi(dx) == rr and absi(dz) == rr else Blocks.HULL)
+	world.fill_box(t + Vector3i(0, 30, 0), t + Vector3i(0, 30, 0), Blocks.RECEIVER)
+
+## 大烟囱：里面有上升气流，气泡形态能一路飘到顶上（上面有宝箱和种子方块）
+func _chimney() -> void:
+	var c := CHIMNEY
+	for y in range(G, G + CHIMNEY_H):
+		for z in range(c.z - 2, c.z + 3):
+			for x in range(c.x - 2, c.x + 3):
+				var wall := absi(x - c.x) == 2 or absi(z - c.z) == 2
+				if not wall:
+					world.fill_box(Vector3i(x, y, z), Vector3i(x, y, z), Blocks.AIR)
 					continue
-				world.fill_box(Vector3i(x, y, z), Vector3i(x, y, z), Blocks.CRYSTAL if ring else Blocks.HULL)
-	world.fill_box(Vector3i(t.x, t.y + 17, t.z), Vector3i(t.x, t.y + 17, t.z), Blocks.RECEIVER)
+				var t := Blocks.REINFORCED
+				if (y - G) % 8 < 2:
+					t = Blocks.RUST
+				world.fill_box(Vector3i(x, y, z), Vector3i(x, y, z), t)
+	# 南面的炉口（进得去）
+	world.fill_box(Vector3i(c.x, G, c.z + 2), Vector3i(c.x, G + 1, c.z + 2), Blocks.AIR)
+	world.fill_box(Vector3i(c.x - 1, G + 2, c.z + 2), Vector3i(c.x + 1, G + 2, c.z + 2), Blocks.HULL_DARK)
+	# 顶上的环形平台
+	var top := G + CHIMNEY_H
+	for z in range(c.z - 4, c.z + 5):
+		for x in range(c.x - 4, c.x + 5):
+			if absi(x - c.x) <= 1 and absi(z - c.z) <= 1:
+				continue
+			world.fill_box(Vector3i(x, top, z), Vector3i(x, top, z), Blocks.METAL)
+			if absi(x - c.x) == 4 or absi(z - c.z) == 4:
+				world.fill_box(Vector3i(x, top + 1, z), Vector3i(x, top + 1, z), Blocks.RUST if (x + z) % 2 else Blocks.HULL_DARK)
+	world.fill_box(Vector3i(c.x - 4, top + 2, c.z - 4), Vector3i(c.x - 4, top + 2, c.z - 4), Blocks.LAMP)
+	world.fill_box(Vector3i(c.x + 4, top + 2, c.z + 4), Vector3i(c.x + 4, top + 2, c.z + 4), Blocks.LAMP)
+
+const OUTCROP_KEEP := [
+	Rect2i(4, 66, 28, 24),      # 停机坪、荆棘路障
+	Rect2i(40, 64, 28, 26),     # 断崖两岸
+	Rect2i(58, 38, 44, 50),     # 厂区
+	Rect2i(98, 44, 36, 36),     # Boss 场地
+]
+
+func _outcrops() -> void:
+	var n := FastNoiseLite.new()
+	n.seed = 45
+	n.frequency = 0.21
+	for key in heights.keys():
+		var x: int = key.x
+		var z: int = key.y
+		var h: int = heights[key]
+		var keep := false
+		for r in OUTCROP_KEEP:
+			if (r as Rect2i).has_point(Vector2i(x, z)):
+				keep = true
+				break
+		if keep:
+			continue
+		var near_edge := false
+		for dz in range(-2, 3):
+			for dx in range(-2, 3):
+				if h_at(x + dx, z + dz) < 0:
+					near_edge = true
+		if not near_edge:
+			continue
+		var v := n.get_noise_2d(x, z)
+		if v < 0.1 or world.get_block(Vector3i(x, h, z)) != Blocks.AIR:
+			continue
+		var hh := mini(1 + int((v - 0.1) * 9.0), 4)
+		for y in range(h, h + hh):
+			var t := Blocks.ROCK if (y - h) < hh - 1 else Blocks.MOSS
+			if (x * 3 + z) % 4 == 0:
+				t = Blocks.RUST
+			world.fill_box(Vector3i(x, y, z), Vector3i(x, y, z), t)
+
+func _island_falls() -> Array:
+	var out := []
+	for spec in [[14, 78, Vector2i(-1, 0)], [66, 62, Vector2i(0, -1)], [90, 66, Vector2i(0, 1)]]:
+		var x: int = spec[0]
+		var z: int = spec[1]
+		var d: Vector2i = spec[2]
+		var last := Vector2i(-1, -1)
+		for k in 80:
+			var q := Vector2i(x, z) + d * k
+			if h_at(q.x, q.y) >= 0:
+				last = q
+			elif last.x >= 0:
+				break
+		if last.x < 0:
+			continue
+		var h := h_at(last.x, last.y)
+		out.append([world.voxel_center(Vector3i(last.x, h - 2, last.y)) + Vector3(d.x, 0, d.y) * 0.3, Vector3(d.x, 0, d.y)])
+	return out
+
+## 厂房西墙上慢慢转动的大齿轮（装饰）
+func _gears() -> void:
+	if vista == null:
+		return
+	var V := VoxelWorld.CELL_M
+	# 厂房西墙顶上两个咬合的齿轮（大的慢、小的快）
+	vista.add("gear", {"r": 8.0, "teeth": 12, "voxel": 0.5}, Vector3(HALL.position.x + 0.5, G + 16.0, 72.0) * V, PI / 2.0, {"spin": 0.3, "shadow": true})
+	vista.add("gear", {"r": 5.0, "teeth": 8, "voxel": 0.5}, Vector3(HALL.position.x + 0.5, G + 17.0, 63.6) * V, PI / 2.0, {"spin": -0.48, "shadow": true})
 
 # ================================================================ 装点
 
@@ -404,14 +537,14 @@ func _dress() -> void:
 	deco("space-station/container", 16, 84, 1.2)
 	deco("space-station/computer-screen", 8, 83, 0.9)
 	# 厂区：机械臂、齿轮、发电设备
-	deco("factory/robot-arm-a", 74, 46, 1.8)
+	deco("factory/robot-arm-a", 62, 50, 1.8)
 	deco("factory/machine", 62, 58, 1.4)
 	deco("factory/cog-a", 94, 72, 0.9, "none")
 	deco("factory/cog-b", 61, 80, 0.8, "none")
 	deco("factory/scanner-high", 86, 80, 1.6)
 	deco("factory/screen-wide", 76, 80, 1.2)
 	# 岛边缘的树
-	for c in [Vector2i(8, 64), Vector2i(20, 88), Vector2i(36, 68), Vector2i(40, 84), Vector2i(10, 90), Vector2i(66, 86), Vector2i(98, 72), Vector2i(72, 44), Vector2i(114, 56)]:
+	for c in [Vector2i(8, 64), Vector2i(20, 88), Vector2i(36, 68), Vector2i(40, 84), Vector2i(10, 90), Vector2i(66, 86), Vector2i(98, 72)]:
 		var cell := find_flat(c.x + rng.randi_range(-2, 2), c.y + rng.randi_range(-2, 2), 3, 1)
 		if cell.y >= 0 and world.get_block(cell) == Blocks.AIR:
 			tree(cell, rng.randi_range(4, 6), rng.randf_range(1.6, 2.4))
@@ -440,6 +573,47 @@ func _enemy_at(cell: Vector3i) -> void:
 	e.global_position = world.voxel_top(cell + Vector3i.DOWN) + Vector3.UP * 0.05
 	e.rotation.y = rng.randf() * TAU
 	enemies.append(e)
+
+func _spawn(e: Node3D, cell: Vector3i, lift := 0.0) -> Node3D:
+	add_child(e)
+	e.global_position = world.voxel_top(cell + Vector3i.DOWN) + Vector3.UP * (0.05 + lift)
+	e.rotation.y = rng.randf() * TAU
+	enemies.append(e)
+	return e
+
+## 熔炉守卫：炸开加固墙以后，走进场地就开打；打倒它，重构塔才能点亮
+func _setup_boss() -> void:
+	boss = FurnaceWarden.new()
+	add_child(boss)
+	boss.global_position = world.voxel_top(ARENA + Vector3i(3, -1, 0)) + Vector3.UP * 0.05
+	boss.rotation.y = PI / 2.0
+	boss.arena_center = world.voxel_top(ARENA + Vector3i.DOWN)
+	boss.arena_radius = 5.8
+	boss.defeated.connect(_on_boss_defeated)
+	var trig := zone(Zone, Vector3i(ARENA.x - 9, G + 10, ARENA.z - 7), Vector3i(ARENA.x + 6, G + 14, ARENA.z + 7))
+	trig.player_entered.connect(func() -> void:
+		if is_instance_valid(boss) and not boss.active:
+			boss.start()
+			Music.play_area("boss")
+			Music.set_override("explore")
+			GameState.say("那是……熔炉守卫！工坊的总管机器人，它也被锈蚀了。它太硬了，正面打不动——引它去撞石柱，或者把它的炮弹打回去！"))
+
+func _on_boss_defeated(_e: Node) -> void:
+	boss_done = true
+	SaveGame.set_flag("gw_boss")
+	Music.play_area("gw")
+	Music.set_override("")
+	GameState.say("熔炉守卫停下来了……它身上的锈在剥落。等星球重构好，它会醒过来，变回那个爱唠叨的老总管。")
+	GameState.set_objective(10, "点亮第二座重构塔", _v(TOWER + Vector3i(-3, 1, 0)))
+	_make_goal()
+
+func _make_goal() -> void:
+	var goal := zone(Goal, TOWER + Vector3i(-5, 0, -5), TOWER + Vector3i(4, 4, 5)) as Goal
+	goal.line = "第二个节点接通了。……工坊的灯，一盏一盏亮起来了。PIX，谢谢你。还有三座。"
+	goal.player_entered.connect(func() -> void:
+		world.set_block(TOWER + Vector3i(0, 30, 0), Blocks.RECEIVER_ON)
+		if vista and not is_instance_valid(_beam):
+			_beam = vista.add_beam(world.voxel_center(TOWER + Vector3i(0, 30, 0)) + Vector3.UP * 0.3, Color(0.45, 1.0, 0.8), 500.0, 0.9))
 
 func _seed_at(id: String, cell: Vector3i, line: int) -> void:
 	var sc := SeedCube.new()
@@ -483,6 +657,27 @@ func _logic() -> void:
 	_enemy_at(Vector3i(74, G, 56))
 	_enemy_at(Vector3i(94, G, 68))
 	_enemy_at(Vector3i(74, G, 79))
+	_spawn(Rustfly.new(), Vector3i(64, G, 78), 2.6)                 # 断崖东岸
+	_spawn(Spikeshell.new(), Vector3i(78, G, 73))                    # 厂房里
+	_spawn(Mortar.new(), Vector3i(83, G, 44))                        # 储料场里的两门炮台
+	_spawn(Mortar.new(), Vector3i(95, G, 50))
+	_spawn(Scrapling.new(), Vector3i(18, G, 64))                     # 停机坪北边
+	_spawn(Rustfly.new(), Vector3i(94, WALK_Y + 1, 60), 2.4)         # 空中走廊
+	_spawn(Spikeshell.new(), Vector3i(40, G, 82))                    # 断崖西岸
+	talk(Vector3i(76, G, 40), Vector3i(84, G + 4, 46), [
+		"储料场里架着两门锈炮台！地上的红圈就是落点。气泡的气浪能把炮弹原路打回去——试试看。",
+	])
+	# 大烟囱：气泡顺着热气流飘上去
+	var chim := zone(Fan, Vector3i(CHIMNEY.x - 1, G, CHIMNEY.z - 1), Vector3i(CHIMNEY.x + 1, G + CHIMNEY_H + 3, CHIMNEY.z + 1), {"strength": 4.4, "max_rise_speed": 4.2})
+	chim.set("is_powered", true)
+	talk(Vector3i(CHIMNEY.x - 3, G, CHIMNEY.z + 3), Vector3i(CHIMNEY.x + 3, G + 4, CHIMNEY.z + 7), [
+		"这根大烟囱里还往上冒着热气……气泡形态说不定能顺着热气飘上去。",
+	])
+	var ctop := Vector3i(CHIMNEY.x, G + CHIMNEY_H + 1, CHIMNEY.z)
+	zone(TreasureChest, ctop + Vector3i(3, 0, 3), ctop + Vector3i(3, 1, 3), {"chest_id": "gw_chimney", "coins": 35, "energy": 5, "line": "烟囱顶上藏着以前工人们的小金库！……拿走吧，他们不会介意的。"})
+	_seed_at("gw_s4", ctop + Vector3i(-3, 0, -3), 3)
+	# Boss 场地
+	_setup_boss()
 	# 种子方块
 	_seed_at("gw_s1", Vector3i(9, G, 80), 0)
 	_seed_at("gw_s2", Vector3i(64, G, 81), 1)
@@ -490,7 +685,7 @@ func _logic() -> void:
 	# 记忆碎片
 	_fragment("gw_1", Vector3i(16, G, 72), "艾拉·林，研究日志 #40：齿轮工坊的老师傅们不信“体素态”。我把一台车床拆成方块又拼回去，他们围着它转了一下午。")
 	_fragment("gw_2", Vector3i(95, G, 44), "艾拉·林，研究日志 #188：引擎的五个节点要分散建造，一座塔坏了，其他四座还能撑住。我讨厌只有一个备份。")
-	_fragment("gw_3", Vector3i(114, G + 10, 64), "艾拉·林，研究日志 #402：模拟又跑了一遍。风暴会在十年后再来一次。重构以后，我们还能再逃一次吗？")
+	_fragment("gw_3", TOWER + Vector3i(-2, 0, 4), "艾拉·林，研究日志 #402：模拟又跑了一遍。风暴会在十年后再来一次。重构以后，我们还能再逃一次吗？")
 	# 检查点
 	zone(Checkpoint, SPAWN + Vector3i(-2, 0, -2), SPAWN + Vector3i(2, 3, 2))
 	zone(Checkpoint, Vector3i(34, G, 74), Vector3i(38, G + 3, 78))
@@ -536,7 +731,7 @@ func _logic() -> void:
 	_objective(4, "去储料场找一块能量晶块", Vector3i(92, G, 46), Vector3i(62, G, 54), Vector3i(70, G + 4, 64))
 	_objective(6, "拿到厂房中央的能量核心", CORE + Vector3i(0, 1, 0), Vector3i(71, G, 59), Vector3i(82, G + 4, 75))
 	_objective(8, "炸开走廊尽头的加固墙", Vector3i(BLAST_X - 1, WALK_Y + 1, 60), Vector3i(86, WALK_Y + 1, 58), Vector3i(92, WALK_Y + 4, 63))
-	_objective(9, "点亮第二座重构塔", TOWER + Vector3i(0, 1, -3), Vector3i(98, WALK_Y + 1, 58), Vector3i(103, WALK_Y + 4, 63))
+	_objective(9, "击败守着重构塔的熔炉守卫", ARENA + Vector3i(0, 1, 0), Vector3i(98, WALK_Y + 1, 58), Vector3i(103, WALK_Y + 4, 63))
 	# 能量核心：气泡形态
 	form_core = zone(FormCore, CORE + Vector3i(-1, 0, -1), CORE + Vector3i(1, 2, 1), {
 		"form": MorphBall.BUBBLE,
@@ -556,9 +751,6 @@ func _logic() -> void:
 		GameState.set_objective(5, "进入厂房", _v(Vector3i(71, G, 67))))
 	world.fire.exploded.connect(_on_exploded)
 	world.block_changed.connect(_watch_slab)
-	# 终点
-	var goal := zone(Goal, TOWER + Vector3i(-5, 0, -5), TOWER + Vector3i(5, 4, 5)) as Goal
-	goal.line = "第二个节点接通了。……工坊的灯，一盏一盏亮起来了。PIX，谢谢你。还有三座。"
 	_toys()
 	zone(MusicZone, Vector3i(26, G - 2, 60), Vector3i(60, G + 6, 92), {"state": "puzzle"})
 	zone(MusicZone, Vector3i(60, G - 2, 38), Vector3i(98, G + 6, 60), {"state": "puzzle"})
@@ -673,6 +865,10 @@ func apply_save(d: Dictionary) -> void:
 	if bool(flags.get("gw_door", false)) and not socket.done:
 		socket.done = true
 		world.set_block(GAP, Blocks.CRYSTAL)
+	if bool(flags.get("gw_boss", false)) and is_instance_valid(boss):
+		boss.queue_free()
+		boss_done = true
+		_make_goal()
 	# 荆棘烧过就不再长回来
 	if bool(flags.get("gw_barricade", false)):
 		for z in range(60, 92):
