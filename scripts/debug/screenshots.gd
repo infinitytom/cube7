@@ -65,6 +65,29 @@ func _run() -> void:
 		await aerial("e03_boss", Vector3(22, 8, 38), Vector3(28, 5, 30), 0.5)
 		get_tree().quit()
 		return
+	if OS.get_cmdline_user_args().has("--cc"):
+		var L := AreaCity
+		await aerial("c01_overview", Vector3(-30, 130, 200), Vector3(60, 60, 70), 2.0)
+		await aerial("c02_arrival", Vector3(4, L.GA + 10, 134), Vector3(40, L.GB, 104), 1.0)
+		await aerial("c03_market", Vector3(30, L.GB + 16, 128), Vector3(50, L.GB, 100), 1.0)
+		await aerial("c04_park", Vector3(76, L.GC + 14, 96), Vector3(96, L.GC, 66), 1.0)
+		await aerial("c05_capitol", Vector3(86, L.GD + 16, 80), Vector3(58, L.GD + 8, 36), 1.0)
+		await aerial("c06_bridge", Vector3(110, L.GD + 10, 30), Vector3(96, L.GD, 50), 1.0)
+		await shot("c07_spawn", L.SPAWN, -PI / 2.0 - 0.4, -0.25, false, 1.5)
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--ab"):
+		var L := AreaAbyss
+		await aerial("a01_overview", Vector3(-40, 130, 190), Vector3(64, 40, 64), 2.0)
+		await aerial("a02_pit_down", Vector3(64, 110, 90), Vector3(64, 16, 60), 1.0)
+		await aerial("a03_rim", Vector3(0, L.TOP + 14, 90), Vector3(40, L.TOP, 60), 1.0)
+		await aerial("a04_l1", Vector3(40, L.L1 + 8, 80), Vector3(80, L.L1, 56), 1.0)
+		await aerial("a05_cave", Vector3(96, L.L2 + 6, 60), Vector3(112, L.L2 + 2, 66), 1.0)
+		await aerial("a06_arena", Vector3(50, L.FLOOR + 14, 84), Vector3(66, L.FLOOR, 62), 1.0)
+		await shot("a07_spawn", L.SPAWN, -PI / 2.0, -0.25, false, 1.5)
+		await aerial("a08_spiral", Vector3(64, L.TOP + 4, 64), Vector3(50, L.TOP - 8, 72), 1.0)
+		get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--gw2"):
 		var G := AreaGearworks.G
 		await aerial("w01_overview", Vector3(-30, 80, 180), Vector3(70, 22, 55), 2.0)

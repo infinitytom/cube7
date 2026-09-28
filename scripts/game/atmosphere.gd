@@ -22,6 +22,24 @@ const PRESETS := {
 		"planet": Vector3(-0.35, 0.33, -0.88), "planet_radius": 0.12, "planet_color": Color(0.98, 0.78, 0.86), "planet_band": Color(0.8, 0.56, 0.78),
 		"moon": Vector3(0.2, 0.45, -0.85), "stars": 0.25, "horizon_glow": 0.55, "ambient": 0.95,
 	},
+	# 第三章：晶簇深渊——清冷的蓝紫色午后，远处漂着巨大的晶体
+	"abyss": {
+		"top": Color(0.16, 0.26, 0.62), "mid": Color(0.42, 0.52, 0.92), "horizon": Color(0.78, 0.84, 1.0), "bottom": Color(0.55, 0.6, 0.9),
+		"sun_rot": Vector3(-48, 150, 0), "sun_color": Color(0.92, 0.94, 1.0), "sun_energy": 1.35, "sun_tint": Color(0.85, 0.8, 1.0),
+		"cloud_lit": Color(0.96, 0.96, 1.0), "cloud_shade": Color(0.7, 0.72, 0.95), "gap": Color(0.48, 0.5, 0.88),
+		"fog": Color(0.72, 0.78, 1.0), "fog_density": 0.0012, "fog_height": 2.0, "fog_height_density": 0.03,
+		"planet": Vector3(0.5, 0.4, -0.75), "planet_radius": 0.13, "planet_color": Color(0.8, 0.9, 1.0), "planet_band": Color(0.6, 0.7, 0.98),
+		"moon": Vector3(-0.6, 0.5, -0.6), "stars": 0.15, "horizon_glow": 0.3, "ambient": 1.05,
+	},
+	# 第四章：云顶之城——高空的正午，天很蓝，云海在很远的下面
+	"city": {
+		"top": Color(0.14, 0.4, 0.95), "mid": Color(0.4, 0.66, 1.0), "horizon": Color(0.9, 0.95, 1.0), "bottom": Color(0.7, 0.8, 1.0),
+		"sun_rot": Vector3(-58, -60, 0), "sun_color": Color(1.0, 0.97, 0.9), "sun_energy": 1.6, "sun_tint": Color(1.0, 0.95, 0.85),
+		"cloud_lit": Color(1.0, 1.0, 1.0), "cloud_shade": Color(0.78, 0.84, 0.98), "gap": Color(0.55, 0.66, 0.95),
+		"fog": Color(0.84, 0.9, 1.0), "fog_density": 0.0009, "fog_height": -10.0, "fog_height_density": 0.03,
+		"planet": Vector3(0.3, 0.5, -0.8), "planet_radius": 0.12, "planet_color": Color(0.9, 0.86, 1.0), "planet_band": Color(0.7, 0.66, 0.95),
+		"moon": Vector3(-0.7, 0.45, -0.4), "stars": 0.0, "horizon_glow": 0.2, "ambient": 1.05,
+	},
 	# 标题画面：暖黄昏
 	"title": {
 		"top": Color(0.22, 0.42, 0.92), "mid": Color(0.62, 0.66, 0.95), "horizon": Color(1.0, 0.86, 0.74), "bottom": Color(0.72, 0.72, 0.9),

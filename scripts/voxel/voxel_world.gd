@@ -872,10 +872,16 @@ func _step_falling() -> void:
 
 func rebuild_all() -> void:
 	var t0 := Time.get_ticks_msec()
+	_init_tables()
+	# 所有小区块分给多个线程并行生成（只读体素数据，写结果时加锁）
+	var list: Array[Vector3i] = []
 	for cz in ceili(size.z / float(CHUNK)):
 		for cy in ceili(size.y / float(CHUNK)):
 			for cx in ceili(size.x / float(CHUNK)):
-				_build_chunk(Vector3i(cx, cy, cz))
+				list.append(Vector3i(cx, cy, cz))
+	var task := WorkerThreadPool.add_group_task(func(i: int) -> void: _build_chunk(list[i]), list.size(), -1, true, "voxel mesh")
+	WorkerThreadPool.wait_for_group_task_completion(task)
+	print("[VoxelWorld] 网格生成 %d ms（%d 个小区块）" % [Time.get_ticks_msec() - t0, list.size()])
 	_dirty.clear()
 	_commit_groups()
 	print("[VoxelWorld] 全部区块生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
@@ -1003,46 +1009,76 @@ var _bv: Array = []
 var _occ := PackedByteArray()
 var _cat := PackedByteArray()
 
-func _build_chunk(c: Vector3i) -> void:
-	var origin := c * CHUNK
-	if origin.x < 0 or origin.y < 0 or origin.z < 0 or origin.x >= size.x or origin.y >= size.y or origin.z >= size.z:
-		return
+var _mesh_mutex := Mutex.new()
+
+func _init_tables() -> void:
 	if _occ.is_empty():
 		_occ.resize(256)
 		_cat.resize(256)
 		for t in Blocks.COUNT:
 			_occ[t] = 1 if _is_occluder(t) else 0
 			_cat[t] = _category(t)
+
+func _build_chunk(c: Vector3i) -> void:
+	var origin := c * CHUNK
+	if origin.x < 0 or origin.y < 0 or origin.z < 0 or origin.x >= size.x or origin.y >= size.y or origin.z >= size.z:
+		return
+	_init_tables()
 	# 1) 把区块连同一圈邻居拷进带边框的小数组，之后查邻居不用再做边界判断
 	const P := CHUNK + 2
 	const PP := P * P
 	# 整个小区块连同邻居都是空气就不用生成（大部分天空区块）
 	if _chunk_all_air(origin):
+		_mesh_mutex.lock()
 		_sub.erase(c)
 		_gdirty[Vector3i(c.x >> 1, c.y >> 1, c.z >> 1)] = true
+		_mesh_mutex.unlock()
 		return
 	var pb := PackedByteArray()
-	pb.resize(P * PP)
 	var psh := PackedByteArray()
-	psh.resize(P * PP)
 	var sx := size.x
 	var sxy := size.x * size.y
-	for lz in P:
-		var z := origin.z - 1 + lz
-		if z < 0 or z >= size.z:
-			continue
-		for ly in P:
-			var y := origin.y - 1 + ly
-			if y < 0 or y >= size.y:
+	var inner := origin.x >= 1 and origin.y >= 1 and origin.z >= 1 and origin.x + CHUNK + 1 <= size.x and origin.y + CHUNK + 1 <= size.y and origin.z + CHUNK + 1 <= size.z
+	if inner:
+		# 整块在世界内部：按行整段拷贝（比逐个体素快很多），顺便看看有没有露出来的面
+		var any_open := false
+		for lz in P:
+			var z := origin.z - 1 + lz
+			for ly in P:
+				var row := sx * (origin.y - 1 + ly) + sxy * z + origin.x - 1
+				var sl := data.slice(row, row + P)
+				var sh := shapes.slice(row, row + P)
+				pb.append_array(sl)
+				psh.append_array(sh)
+				if not any_open and (sl.count(0) > 0 or sl.count(Blocks.GLASS) > 0 or sh.count(0) != P):
+					any_open = true
+		if not any_open:
+			# 全实心、四周也全实心：没有任何面
+			_mesh_mutex.lock()
+			if _sub.has(c):
+				_sub.erase(c)
+				_gdirty[Vector3i(c.x >> 1, c.y >> 1, c.z >> 1)] = true
+			_mesh_mutex.unlock()
+			return
+	else:
+		pb.resize(P * PP)
+		psh.resize(P * PP)
+		for lz in P:
+			var z := origin.z - 1 + lz
+			if z < 0 or z >= size.z:
 				continue
-			var row := sx * y + sxy * z
-			var li := P * ly + PP * lz
-			for lx in P:
-				var x := origin.x - 1 + lx
-				if x < 0 or x >= sx:
+			for ly in P:
+				var y := origin.y - 1 + ly
+				if y < 0 or y >= size.y:
 					continue
-				pb[li + lx] = data[row + x]
-				psh[li + lx] = shapes[row + x]
+				var row := sx * y + sxy * z
+				var li := P * ly + PP * lz
+				for lx in P:
+					var x := origin.x - 1 + lx
+					if x < 0 or x >= sx:
+						continue
+					pb[li + lx] = data[row + x]
+					psh[li + lx] = shapes[row + x]
 	# 2) 逐面生成
 	var v1 := PackedVector3Array(); var n1 := PackedVector3Array(); var c1 := PackedColorArray(); var u1 := PackedVector2Array(); var w1 := PackedVector2Array()
 	var v2 := PackedVector3Array(); var n2 := PackedVector3Array(); var c2 := PackedColorArray(); var u2 := PackedVector2Array(); var w2 := PackedVector2Array()
@@ -1140,11 +1176,14 @@ func _build_chunk(c: Vector3i) -> void:
 						else:
 							v3.append(q[k]); n3.append(nf); c3.append(col); u3.append(CUV[k]); w3.append(tuv2); faces.append(q[k])
 	var g := Vector3i(c.x >> 1, c.y >> 1, c.z >> 1)
+	_mesh_mutex.lock()
 	_gdirty[g] = true
 	if v1.is_empty() and v2.is_empty() and v3.is_empty():
 		_sub.erase(c)
+		_mesh_mutex.unlock()
 		return
 	_sub[c] = [[null, [v1, n1, c1, u1, w1], [v2, n2, c2, u2, w2], [v3, n3, c3, u3, w3]], faces, glass_faces]
+	_mesh_mutex.unlock()
 
 ## 把一个渲染组（GROUP³ 个小区块）的网格和碰撞拼起来
 func _commit_group(g: Vector3i) -> void:

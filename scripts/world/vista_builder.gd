@@ -13,6 +13,8 @@ static func build(kind: String, p: Dictionary) -> Dictionary:
 		"factory_island": return factory_island(p)
 		"gear": return gear(p)
 		"truss": return truss(p)
+		"shard": return shard(p)
+		"city_island": return city_island(p)
 	push_error("VistaBuilder: unknown kind " + kind)
 	return island(p)
 
@@ -426,3 +428,68 @@ static func truss(p: Dictionary) -> Dictionary:
 				for z in 5:
 					gr.s(x, y, z, 0)
 	return {"grid": gr, "falls": [], "anchor": Vector3(0, 0, 2.5) * vs}
+
+## 漂浮的巨型晶体：一根斜着的六棱晶柱 + 旁边几根小的
+static func shard(p: Dictionary) -> Dictionary:
+	var L: int = p.get("len", 40)
+	var R: float = p.get("r", 5.0)
+	var vs: float = p.get("voxel", 1.0)
+	var seed_v: int = p.get("seed", 7)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var W := int(R * 4) + 8
+	var gr := VistaGrid.new(Vector3i(W, L + 6, W), vs)
+	var c := Vector2(W * 0.5, W * 0.5)
+	var t: int = p.get("block", Blocks.CRYSTAL)
+	var pieces := [[c, R, L]]
+	for k in 3:
+		var a := rng.randf() * TAU
+		pieces.append([c + Vector2(cos(a), sin(a)) * R * 1.3, R * 0.45, int(L * rng.randf_range(0.3, 0.55))])
+	for pc in pieces:
+		var pc_c: Vector2 = pc[0]
+		var pr: float = pc[1]
+		var pl: int = pc[2]
+		for y in pl:
+			var k := float(y) / pl
+			var rr := pr * (1.0 if k < 0.75 else (1.0 - (k - 0.75) / 0.25))
+			var lean := Vector2(k * pr * 0.6, 0)
+			for z in W:
+				for x in W:
+					var q := Vector2(x + 0.5, z + 0.5) - pc_c - lean
+					# 六边形截面
+					var hx := maxf(absf(q.x) * 0.866 + absf(q.y) * 0.5, absf(q.y))
+					if hx <= rr:
+						gr.s(x, y, z, t)
+	return {"grid": gr, "falls": [], "anchor": Vector3(c.x, 0, c.y) * vs}
+
+## 城区浮岛：岛上几栋白色的楼（玻璃窗带、平顶或穹顶）、细高的塔
+static func city_island(p: Dictionary) -> Dictionary:
+	var vs: float = p.get("voxel", 1.0)
+	var seed_v: int = p.get("seed", 11)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var R: float = p.get("r", 20.0)
+	var isl := island({"r": R, "top": 5, "under": p.get("under", 24), "hill": 0.0, "trees": 0.01, "kinds": ["round", "blossom"], "seed": seed_v, "voxel": vs, "falls": p.get("falls", 0)})
+	var gr: VistaGrid = isl.grid
+	var a: Vector3 = isl.anchor / vs
+	var base := int(a.y)
+	for k in p.get("buildings", 5):
+		var ang := rng.randf() * TAU
+		var dist := rng.randf_range(0.0, 0.55) * R
+		var bx := int(a.x + cos(ang) * dist)
+		var bz := int(a.z + sin(ang) * dist)
+		var w := rng.randi_range(2, 5)
+		var hh := rng.randi_range(6, 22)
+		gr.box(Vector3i(bx - w, base, bz - w), Vector3i(bx + w, base + hh, bz + w), Blocks.HULL if k % 3 else Blocks.TILE)
+		for y in range(base + 2, base + hh, 3):
+			for xx in range(bx - w, bx + w + 1, 2):
+				gr.s(xx, y, bz - w, Blocks.LAMP if rng.randf() < 0.15 else Blocks.GLASS)
+				gr.s(xx, y, bz + w, Blocks.GLASS)
+			for zz in range(bz - w, bz + w + 1, 2):
+				gr.s(bx - w, y, zz, Blocks.GLASS)
+				gr.s(bx + w, y, zz, Blocks.GLASS)
+		if k % 2 == 0:
+			gr.sphere(Vector3(bx + 0.5, base + hh + 1, bz + 0.5), w + 0.5, Blocks.GLASS, true, Vector3(1, 0.7, 1))
+		else:
+			gr.box(Vector3i(bx, base + hh, bz), Vector3i(bx, base + hh + rng.randi_range(3, 8), bz), Blocks.HULL_DARK)
+	return isl

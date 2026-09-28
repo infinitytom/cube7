@@ -285,7 +285,7 @@ func _slam() -> void:
 	_shock.visible = true
 	# 第二阶段起：放出锈蜂
 	if hp <= max_hp - 1:
-		_summons = _summons.filter(func(e: Node) -> bool: return is_instance_valid(e))
+		_summons = _summons.filter(func(e) -> bool: return is_instance_valid(e))
 		if _summons.size() < 2:
 			for k in 2 - _summons.size():
 				var f := Rustfly.new()

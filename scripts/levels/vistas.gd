@@ -108,3 +108,49 @@ static func gearworks(level: Node3D, world: VoxelWorld, island_falls: Array = []
 	if v.sync_build:
 		print("[Vista] 同步生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
 	return v
+
+## 第三章 · 晶簇深渊：四周漂着长满水晶的浮岛和巨大的晶体，远处是星核塔；天坑里有瀑布落下
+static func abyss(level: Node3D, world: VoxelWorld, falls: Array = []) -> Vista:
+	var t0 := Time.get_ticks_msec()
+	var sea := -30.0
+	var v := _sky(level, Vector3(32, 0, 32), sea)
+	v.add_underside(world, 44, 31)
+	for f in falls:
+		var top: Vector3 = f[0]
+		var to_y: float = f[2] if f.size() > 2 else sea
+		v.add_waterfall(top, f[1], top.y - to_y, 2.5)
+	for k in 6:
+		var a := k * TAU / 6.0 + 0.5
+		var d := 120.0 + (k % 3) * 45.0
+		v.add("island", {"r": 18.0 + (k % 3) * 6.0, "top": 5, "under": 26, "hill": 4.0, "peak": 14.0 if k % 2 else 0.0, "trees": 0.02, "kinds": ["pine", "round"], "seed": 400 + k, "falls": 1, "crystals": true}, Vector3(32 + cos(a) * d, -8 + (k % 4) * 12.0, 32 + sin(a) * d), a, {"falls_to": sea})
+		v.add("shard", {"len": 34 + (k % 3) * 12, "r": 4.0 + (k % 2) * 2.0, "seed": 410 + k, "block": Blocks.CRYSTAL if k % 2 else Blocks.GEM_CHAIN}, Vector3(32 + cos(a + 0.5) * (d * 0.8), -12 + (k % 3) * 10.0, 32 + sin(a + 0.5) * (d * 0.8)), a, {"bob": 1.2})
+	for k in 5:
+		var a := k * TAU / 5.0 + 0.2
+		v.add("shard", {"len": 60, "r": 8.0, "seed": 430 + k, "voxel": 2.0}, Vector3(32 + cos(a) * 380.0, -40.0, 32 + sin(a) * 380.0), a, {})
+	v.add("pillar", {"r": 5.0, "h": 70, "seed": 441}, Vector3(-40, sea - 8, 0), 0.0)
+	v.add("pillar", {"r": 4.0, "h": 62, "seed": 442, "tree": false}, Vector3(100, sea - 8, 90), 0.0)
+	_ark_and_towers(v, 2, sea)
+	if v.sync_build:
+		print("[Vista] 同步生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
+	return v
+
+## 第四章 · 云顶之城：四周是别的城区浮岛（白楼、玻璃穹顶），远处的飞艇，星核塔
+static func city(level: Node3D, world: VoxelWorld) -> Vista:
+	var t0 := Time.get_ticks_msec()
+	var sea := -24.0
+	var v := _sky(level, Vector3(36, 20, 40), sea)
+	v.add_underside(world, 40, 41)
+	for k in 7:
+		var a := k * TAU / 7.0 + 0.3
+		var d := 110.0 + (k % 3) * 40.0
+		v.add("city_island", {"r": 18.0 + (k % 3) * 5.0, "seed": 500 + k, "buildings": 4 + k % 3, "falls": 1 if k % 2 else 0}, Vector3(36 + cos(a) * d, 14 + (k % 4) * 10.0, 40 + sin(a) * d), a, {"falls_to": sea, "bob": 0.4})
+	for k in 5:
+		var a := k * TAU / 5.0
+		v.add("city_island", {"r": 28.0, "seed": 520 + k, "voxel": 2.0, "buildings": 7}, Vector3(36 + cos(a) * 360.0, 0.0 + k * 8.0, 40 + sin(a) * 360.0), a, {})
+	# 城区之间的桁架轨道
+	v.add("truss", {"len": 80}, Vector3(-40, 22, 20), 0.6, {})
+	v.add("truss", {"len": 60, "broken": true}, Vector3(120, 30, 90), 2.2, {})
+	_ark_and_towers(v, 3, sea)
+	if v.sync_build:
+		print("[Vista] 同步生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
+	return v

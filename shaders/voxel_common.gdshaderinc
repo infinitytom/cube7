@@ -80,9 +80,15 @@ vec3 voxel_albedo(vec3 base, float light, vec2 uv) {
 		if (abs(v_wnorm.y) < 0.5) col *= 0.82;
 	}
 	// 天然岩石/泥土：细碎的颗粒和横向纹理
-	if (v_type > 2.5 && v_type < 3.5 || v_type > 24.5 && v_type < 25.5 || v_type > 31.5 && v_type < 33.5) {
+	if (v_type > 2.5 && v_type < 3.5 || v_type > 24.5 && v_type < 25.5 || v_type > 31.5 && v_type < 33.5 || abs(v_type - 49.0) < 0.5 || abs(v_type - 51.0) < 0.5) {
 		col *= 0.94 + 0.1 * n3;
 		if (abs(v_wnorm.y) < 0.5) col *= 0.96 + 0.06 * sin(v_wpos.y * 26.0 + n2 * 4.0);
+	}
+	// 碎裂石板：表面一道道裂纹，一看就不结实
+	if (abs(v_type - 46.0) < 0.5) {
+		float cr = abs(vnoise(v_wpos * 5.0 + vec3(3.3)) - 0.5);
+		float cr2 = abs(vnoise(v_wpos * 11.0 + vec3(7.1)) - 0.5);
+		col *= 1.0 - 0.45 * (1.0 - smoothstep(0.015, 0.04, cr)) - 0.25 * (1.0 - smoothstep(0.01, 0.03, cr2));
 	}
 	// 圆角积木：只有露出来的边才压暗
 	float e = exposed_edge_dist(uv);

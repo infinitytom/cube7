@@ -19,6 +19,14 @@ func _ready() -> void:
 		ch = 1
 	if args.has("--autotest=gearworks"):
 		ch = 2
+	# 其他章节：--autotest=<章节 id> → scripts/debug/autotest_<id>.gd
+	var ch_test := ""
+	for a in args:
+		if a.begins_with("--autotest=") and not gh_test and not gw_test:
+			ch_test = a.substr(11)
+			for i in Chapters.count():
+				if Chapters.LIST[i].id == ch_test:
+					ch = i + 1
 	Flow.chapter = 0
 	GameState.chapter = ch
 	level = (TestRoom.new() if use_test else Chapters.make_level(ch)) as Node3D
@@ -30,6 +38,9 @@ func _ready() -> void:
 	player.apply_form(MorphBall.BALL, false)
 	player.respawn_at(level.call("spawn_position"), -1, false)
 
+	if ch_test != "":
+		_attach("res://scripts/debug/autotest_%s.gd" % ch_test)
+		return
 	if args.has("--autotest") or gh_test or gw_test:
 		_attach("res://scripts/debug/autotest_greenhouse.gd" if gh_test else ("res://scripts/debug/autotest_gearworks.gd" if gw_test else "res://scripts/debug/autotest.gd"))
 		return

@@ -630,6 +630,9 @@ func _wave() -> void:
 func hurt(from: Vector3, n := 1) -> void:
 	if _invuln > 0.0:
 		return
+	if get_meta("riding", false):
+		for r in get_tree().get_nodes_in_group("sky_rail"):
+			r.call("knock_off")
 	_invuln = 1.4
 	var away := global_position - from
 	away.y = 0.0

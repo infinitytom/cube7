@@ -9,6 +9,7 @@ enum {
 	CLIFF_B, CLIFF_C, PINE, BLOSSOM,
 	FIRE, EMBER, COPPER, BARREL, REINFORCED, SCAFFOLD, VENT, BRAMBLE,
 	PLANK, RUST,
+	CRUMBLE, GEM_CHAIN, LENS, DARKROCK, GLOWSHROOM, DARKROCK_B,
 	COUNT,
 }
 
@@ -63,6 +64,12 @@ const DEFS := {
 	BRAMBLE: {"name": "枯荆棘", "color": Color("6e5646"), "burn": 1.4},
 	PLANK: {"name": "木板", "color": Color("d9a066"), "drill": true, "burn": 3.0, "catch": 0.3},
 	RUST: {"name": "锈铁", "color": Color("b5653e"), "drill": true},
+	CRUMBLE: {"name": "碎裂石板", "color": Color("cdb89c"), "impact": 3.0, "drill": true},
+	GEM_CHAIN: {"name": "共鸣晶簇", "color": Color("c08cff"), "render": Render.GLOW, "impact": 3.0, "drill": true, "chain": true, "coins": 1},
+	LENS: {"name": "受光晶", "color": Color("7fb8d0")},
+	DARKROCK: {"name": "深渊岩", "color": Color("5b5470")},
+	DARKROCK_B: {"name": "深渊岩（深层）", "color": Color("4a4560")},
+	GLOWSHROOM: {"name": "荧光菇", "color": Color("7dffd8"), "render": Render.GLOW, "impact": 1.5, "drill": true, "energy": 1},
 	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1, "burn": 2.5},
 }
 
