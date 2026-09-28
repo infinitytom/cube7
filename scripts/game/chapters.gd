@@ -8,6 +8,7 @@ const LIST := [
 	{"id": "abyss", "num": "第三章", "title": "晶簇深渊", "music": "ab", "tower": 3},
 	{"id": "city", "num": "第四章", "title": "云顶之城", "music": "cc", "tower": 4},
 	{"id": "rust", "num": "第五章", "title": "锈海", "music": "rs", "tower": 5},
+	{"id": "core", "num": "终章", "title": "星核", "music": "core", "tower": 5},
 ]
 
 static func count() -> int:
@@ -25,4 +26,6 @@ static func make_level(ch: int) -> Node3D:
 		return AreaCity.new()
 	if ch == 5:
 		return AreaRust.new()
+	if ch == 6:
+		return AreaCore.new()
 	return AreaGreenhouse.new()

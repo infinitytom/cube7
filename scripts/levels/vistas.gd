@@ -195,3 +195,25 @@ static func rust(level: Node3D, world: VoxelWorld) -> Vista:
 		print("[Vista] 同步生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
 	return v
 
+## 终章 · 星核：我们站在方舟塔的上半截——塔身往下一直伸进云海；云海在两百米下面；五座重构塔在四周远处
+static func core(level: Node3D, world: VoxelWorld) -> Vista:
+	var t0 := Time.get_ticks_msec()
+	var sea := -150.0
+	var v := _sky(level, Vector3(28, 0, 28), sea)
+	# 塔身下半截（大体素）：从平台底下一直伸到云海里
+	v.add("ark_spire", {"r": 5.5, "h": 70, "voxel": 2.0}, Vector3(28, -142.0, 28), 0.3, {"name": "ArkTrunk"})
+	# 四周的浮岛（大体素、很远很低）
+	for k in 8:
+		var a := k * TAU / 8.0 + 0.2
+		var d := 260.0 + (k % 3) * 80.0
+		v.add("island", {"r": 30.0 + (k % 3) * 8.0, "top": 6, "under": 30, "hill": 4.0, "trees": 0.03, "seed": 700 + k, "voxel": 2.0, "falls": 2, "crystals": true},
+			Vector3(28 + cos(a) * d, sea + 40.0 + (k % 4) * 20.0, 28 + sin(a) * d), a, {"falls_to": sea, "fall_width": 8.0})
+	# 五座重构塔（都亮着）
+	for k in 5:
+		var a := k * TAU / 5.0 + 0.4
+		v.add("recon_tower", {"r": 18.0, "seed": 300 + k, "voxel": 2.0, "lit": true, "falls": 1}, Vector3(28 + cos(a) * 420.0, -170.0 + (k % 2) * 40.0, 28 + sin(a) * 420.0), a,
+			{"falls_to": sea, "fall_width": 6.0})
+	if v.sync_build:
+		print("[Vista] 同步生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
+	return v
+

@@ -694,7 +694,9 @@ func _pound_land() -> void:
 	Sfx.play("break_hard", global_position, -2.0, 0.1)
 	_ring_fx(FORMS[DRILL].color, POUND_RADIUS)
 	if world:
-		world.break_sphere(global_position + Vector3.DOWN * 0.6, 1.0, "impact", 10.0, Vector3.DOWN)
+		# 下砸：砸出一个大坑（能砸穿锈铁）
+		var nb := world.break_sphere(global_position + Vector3.DOWN * 0.6, 1.7, "impact", 14.0 * Upgrades.ram_mult(), Vector3.DOWN)
+		GameState.rumble(0.6, 1.0, 0.25 + minf(nb, 200) * 0.001)
 	for e in get_tree().get_nodes_in_group("enemy"):
 		var d := (e as Node3D).global_position.distance_to(global_position)
 		if d < POUND_RADIUS:
@@ -807,9 +809,13 @@ func _handle_impacts() -> void:
 		if speed <= IMPACT_MIN:
 			continue
 		var radius := clampf(0.45 + speed * 0.07, 0.5, 1.55)
+		if charged_ram:
+			radius += 0.45     # 满蓄力冲刺：坑更大，厚锈一撞一个大洞
 		var center: Vector3 = imp.point - n * 0.25
 		var floor_y := -INF if (n.y > 0.55 or low) else global_position.y - r + 0.02
 		var count := world.break_sphere(center, radius, "impact", speed, imp.vel, false, floor_y)
+		if OS.has_environment("CUBE7_DEBUG_IMPACT") and speed > 6.0:
+			print("   撞击 speed=%.1f n=%s low=%s r=%.2f 碎=%d" % [speed, n, low, radius, count])
 		if count == 0 and speed > 4.0 and n.y <= 0.55 and not low:
 			Sfx.play("thud", global_position, linear_to_db(clampf(speed / 12.0, 0.2, 1.0)), 0.1)
 			_hardness_hint(center, speed)

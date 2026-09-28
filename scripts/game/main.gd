@@ -29,7 +29,11 @@ func _ready() -> void:
 					ch = i + 1
 	Flow.chapter = 0
 	GameState.chapter = ch
-	level = (TestRoom.new() if use_test else Chapters.make_level(ch)) as Node3D
+	var editor_mode := Flow.mode == "editor" or args.has("--editor")
+	if editor_mode:
+		level = EditorLevel.new()
+	else:
+		level = (TestRoom.new() if use_test else Chapters.make_level(ch)) as Node3D
 	level.name = "Level"
 	level.set("world_path", NodePath("../VoxelWorld"))
 	add_child(level)
@@ -39,6 +43,13 @@ func _ready() -> void:
 	player.apply_form(MorphBall.BALL, false)
 	player.respawn_at(level.call("spawn_position"), -1, false)
 
+	if editor_mode:
+		var ed := LevelEditor.new()
+		add_child(ed)
+		for a in args:
+			if a.begins_with("--debugscript="):
+				_attach(a.substr(14))
+		return
 	if ch_test != "":
 		_attach("res://scripts/debug/autotest_%s.gd" % ch_test)
 		return

@@ -49,6 +49,24 @@ const PRESETS := {
 		"planet": Vector3(0.45, 0.35, -0.82), "planet_radius": 0.14, "planet_color": Color(1.0, 0.84, 0.76), "planet_band": Color(0.86, 0.6, 0.56),
 		"moon": Vector3(-0.5, 0.5, -0.7), "stars": 0.1, "horizon_glow": 0.6, "ambient": 1.0,
 	},
+	# 终章：星核——高空，天很深，星星都看得见；云海在很远的下面
+	"core": {
+		"top": Color(0.06, 0.08, 0.3), "mid": Color(0.2, 0.26, 0.62), "horizon": Color(0.62, 0.66, 0.95), "bottom": Color(0.4, 0.44, 0.8),
+		"sun_rot": Vector3(-30, 40, 0), "sun_color": Color(1.0, 0.95, 0.9), "sun_energy": 1.5, "sun_tint": Color(1.0, 0.9, 0.8),
+		"cloud_lit": Color(0.95, 0.95, 1.0), "cloud_shade": Color(0.6, 0.62, 0.9), "gap": Color(0.3, 0.34, 0.7),
+		"fog": Color(0.55, 0.6, 0.95), "fog_density": 0.0005, "fog_height": -60.0, "fog_height_density": 0.004,
+		"planet": Vector3(-0.4, 0.45, -0.8), "planet_radius": 0.2, "planet_color": Color(0.9, 0.84, 1.0), "planet_band": Color(0.7, 0.62, 0.95),
+		"moon": Vector3(0.6, 0.55, -0.5), "stars": 0.8, "horizon_glow": 0.35, "ambient": 1.0,
+	},
+	# 结局：星球重构完成的黎明
+	"dawn": {
+		"top": Color(0.2, 0.4, 0.9), "mid": Color(0.6, 0.72, 1.0), "horizon": Color(1.0, 0.88, 0.72), "bottom": Color(0.7, 0.78, 0.98),
+		"sun_rot": Vector3(-20, 40, 0), "sun_color": Color(1.0, 0.9, 0.78), "sun_energy": 1.7, "sun_tint": Color(1.0, 0.8, 0.6),
+		"cloud_lit": Color(1.0, 0.97, 0.92), "cloud_shade": Color(0.8, 0.8, 0.96), "gap": Color(0.55, 0.62, 0.95),
+		"fog": Color(0.95, 0.9, 0.85), "fog_density": 0.0005, "fog_height": -60.0, "fog_height_density": 0.004,
+		"planet": Vector3(-0.4, 0.45, -0.8), "planet_radius": 0.2, "planet_color": Color(0.95, 0.9, 1.0), "planet_band": Color(0.75, 0.7, 0.98),
+		"moon": Vector3(0.6, 0.55, -0.5), "stars": 0.2, "horizon_glow": 0.6, "ambient": 1.1,
+	},
 	# 标题画面：暖黄昏
 	"title": {
 		"top": Color(0.22, 0.42, 0.92), "mid": Color(0.62, 0.66, 0.95), "horizon": Color(1.0, 0.86, 0.74), "bottom": Color(0.72, 0.72, 0.9),

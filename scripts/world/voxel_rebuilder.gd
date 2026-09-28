@@ -94,9 +94,13 @@ func _process(delta: float) -> void:
 
 func _land(it: Dictionary, p: Node3D) -> bool:
 	var to: Vector3 = it.to
-	# 别把方块直接砸进 PIX 身体里
-	if p and p.global_position.distance_to(to) < 0.5 + float(it.size) * 0.5:
-		return false
+	# 别把方块直接砸进 PIX 身体里（球和这块的方盒真的重叠才等）
+	if p:
+		var hs := float(it.size) * 0.5
+		var q := p.global_position
+		var closest := Vector3(clampf(q.x, to.x - hs, to.x + hs), clampf(q.y, to.y - hs, to.y + hs), clampf(q.z, to.z - hs, to.z + hs))
+		if closest.distance_to(q) < 0.42:
+			return false
 	_landed += 1
 	if it.has("cell"):
 		var c: Vector3i = it.cell
@@ -108,7 +112,10 @@ func _land(it: Dictionary, p: Node3D) -> bool:
 	for pair in it.get("vox", []):
 		var q: Vector3i = pair[0]
 		if world.vget(q) == Blocks.AIR:
-			world.vset(q, int(pair[1]))
+			if pair.size() > 2 and int(pair[2]) != 0:
+				world.vset_ramp(q, int(pair[1]), int(pair[2]))
+			else:
+				world.vset(q, int(pair[1]))
 		world.damage.erase(q)
 	if _tick_t <= 0.0:
 		_tick_t = 0.045

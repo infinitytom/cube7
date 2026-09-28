@@ -122,6 +122,9 @@ func _explode() -> void:
 	var p := GameState.player as MorphBall
 	if p and p.global_position.distance_to(pos) < RADIUS and not reflected:
 		p.hurt(pos)
+	# 打回去的锈弹砸中了大块头的发射者（Boss 的锈壳）
+	if reflected and is_instance_valid(owner_enemy) and owner_enemy.has_method("reflected_hit") and pos.distance_to(owner_enemy.global_position) < 5.5:
+		owner_enemy.call("reflected_hit")
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if (e as Node3D).global_position.distance_to(pos) < RADIUS + (0.6 if reflected else 0.0):
 			if reflected:

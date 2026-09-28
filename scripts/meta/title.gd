@@ -522,6 +522,24 @@ func _show_menu() -> void:
 		first = ng
 	if latest >= 0:
 		_item("读取存档", func() -> void: _open_slots("load"))
+	# 章节选择：任何一个存档到过的章节都能回去重玩（重玩不改存档，改装等级照带）
+	var reached := 0
+	var best_up := {}
+	for i in SaveGame.SLOTS:
+		var sd := SaveGame.read(i)
+		if sd.is_empty():
+			continue
+		var ch := int(sd.get("chapter", 1))
+		if bool((sd.get("flags", {}) as Dictionary).get("game_clear", false)):
+			ch = Chapters.count()
+		if ch > reached:
+			reached = ch
+			best_up = sd.get("upgrades", {})
+	if reached >= 2:
+		_item("章节选择", func() -> void: _open_chapters(reached, best_up), "重玩到过的任意一章")
+	_item("关卡编辑器", func() -> void:
+		Music.stop()
+		Flow.goto_game("editor"), "自己搭关卡、试玩、用分享码分享给朋友")
 	_item("设置", func() -> void:
 		_state = "settings"
 		_menu.visible = false
@@ -540,6 +558,42 @@ func _show_menu() -> void:
 		tw.tween_property(ci, "modulate:a", 1.0, 0.25).set_delay(0.04 * i)
 		i += 1
 	create_tween().tween_property(_hints, "modulate:a", 1.0, 0.4)
+
+func _open_chapters(reached: int, ups: Dictionary) -> void:
+	_state = "slots"
+	_menu.visible = false
+	_logo_show(false)
+	_dim_show(true)
+	_slots = _panel(700, 600)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	_slots.add_child(v)
+	v.add_child(UIKit.label("章节选择", 32, UIKit.TEXT, true))
+	var first: Button
+	for i in reached:
+		var info := Chapters.info(i + 1)
+		var b := Button.new()
+		b.text = "%s   %s" % [info.num, info.title]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.custom_minimum_size = Vector2(620, 60)
+		UIKit.juice(b)
+		var n := i + 1
+		b.pressed.connect(func() -> void:
+			SaveGame.data = {}
+			Upgrades._mem = ups.duplicate()
+			Flow.chapter = n
+			Music.stop()
+			Flow.goto_game("replay"))
+		v.add_child(b)
+		if first == null:
+			first = b
+	var hint := HBoxContainer.new()
+	hint.add_theme_constant_override("separation", 26)
+	hint.add_child(UIKit.prompt("ui_accept", "选择", 18))
+	hint.add_child(UIKit.prompt("ui_cancel", "返回", 18))
+	v.add_child(hint)
+	if first:
+		first.grab_focus.call_deferred()
 
 func _logo_show(on: bool) -> void:
 	create_tween().tween_property(_logo, "modulate:a", 1.0 if on else 0.0, 0.25)

@@ -12,6 +12,9 @@ var title := "瞭望台"
 var cost := 40
 var pad_cell := Vector3i.ZERO
 var blueprint: Array = []        ## [[格坐标, 方块类型], ...]，按建造顺序排好
+## 体素级蓝图（体素坐标 -> 方块类型）：用于斜坡、小台阶这种不是整格的结构；设置了它 blueprint 会自动生成
+var vox_blueprint: Dictionary = {}
+var _vox_cells: Dictionary = {}  ## 格 -> [[体素, 类型], ...]
 var done := false
 ## 重建前要清掉的区域（格，含两端）：蓝图范围里零星的石头、灌木
 var clear_a := Vector3i.ZERO
@@ -28,6 +31,18 @@ static var _told := false
 
 func _ready() -> void:
 	add_to_group("rebuild_site")
+	if not vox_blueprint.is_empty():
+		for vp: Vector3i in vox_blueprint:
+			var c := Vector3i(vp.x >> 1, vp.y >> 1, vp.z >> 1)
+			if not _vox_cells.has(c):
+				_vox_cells[c] = []
+			var val = vox_blueprint[vp]
+			(_vox_cells[c] as Array).append([vp, val[0], val[1]] if val is Array else [vp, val])
+		blueprint.clear()
+		var keys := _vox_cells.keys()
+		keys.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return a.y < b.y if a.y != b.y else a.x + a.z < b.x + b.z)
+		for c in keys:
+			blueprint.append([c, int(_vox_cells[c][0][1]), 0])
 	global_position = world.voxel_top(pad_cell + Vector3i.DOWN)
 	if site_id != "" and SaveGame.flag("rb_" + site_id):
 		_place_all()
@@ -39,8 +54,16 @@ func _ready() -> void:
 func _place_all() -> void:
 	done = true
 	_clear(false)
-	for b in blueprint:
-		_put(b)
+	if not _vox_cells.is_empty():
+		for vp in vox_blueprint:
+			var val = vox_blueprint[vp]
+			if val is Array:
+				world.vset_ramp(vp, int(val[0]), int(val[1]))
+			else:
+				world.vset(vp, int(val))
+	else:
+		for b in blueprint:
+			_put(b)
 	rebuilt.emit.call_deferred()
 
 func _put(b: Array) -> void:
@@ -78,7 +101,7 @@ func _build_ghost() -> void:
 	mm.mesh = bm
 	var list: Array = []
 	for b in blueprint:
-		if world.get_block(b[0]) == Blocks.AIR:
+		if world.get_block(b[0]) == Blocks.AIR or _vox_cells.has(b[0]):
 			list.append(b[0])
 	mm.instance_count = list.size()
 	for i in list.size():
@@ -169,7 +192,10 @@ func build(from: Vector3) -> void:
 	var i := 0
 	for b in blueprint:
 		var c: Vector3i = b[0]
-		rb.add_cell(c, int(b[1]), int(b[2]) if b.size() > 2 else 0, world.voxel_center(c), from + Vector3.UP * 0.4, i * step, 0.55)
+		if _vox_cells.has(c):
+			rb.add(_vox_cells[c], world.voxel_center(c), from + Vector3.UP * 0.4, i * step, 0.55)
+		else:
+			rb.add_cell(c, int(b[1]), int(b[2]) if b.size() > 2 else 0, world.voxel_center(c), from + Vector3.UP * 0.4, i * step, 0.55)
 		i += 1
 	rb.finished.connect(func() -> void:
 		if is_instance_valid(_ghost):
@@ -216,13 +242,13 @@ static func tower(base: Vector3i, h := 12) -> Array:
 			for w in 3:
 				var xz: Vector2i = o + fw * i + sw * w
 				if y > 0:
-					bp.append([base + Vector3i(xz.x, y - 1, xz.y), Blocks.PLANK, 0])
+					bp.append([base + Vector3i(xz.x, y - 1, xz.y), Blocks.HULL_DARK, 0])
 				if w == 0:
 					# 矮墙
 					bp.append([base + Vector3i(xz.x, y, xz.y), Blocks.HULL, 0])
 					bp.append([base + Vector3i(xz.x, y + 1, xz.y), Blocks.HULL if i % 2 else Blocks.LAMP, 0])
 				else:
-					bp.append([base + Vector3i(xz.x, y, xz.y), Blocks.PLANK, shape])
+					bp.append([base + Vector3i(xz.x, y, xz.y), Blocks.TILE, shape])
 		f += 2
 		# 拐角平台（3×3，外侧两边有矮墙）
 		var cn: Vector2i = corners[(k + 1) % 4]
@@ -232,7 +258,7 @@ static func tower(base: Vector3i, h := 12) -> Array:
 			for dx in 3:
 				var x := cn.x + dx
 				var z := cn.y + dz
-				bp.append([base + Vector3i(x, f - 1, z), Blocks.PAVING, 0])
+				bp.append([base + Vector3i(x, f - 1, z), Blocks.TILE, 0])
 				if x == ox or z == oz:
 					bp.append([base + Vector3i(x, f, z), Blocks.LAMP if (x == ox and z == oz) else Blocks.HULL, 0])
 		k += 1
@@ -252,7 +278,7 @@ static func bridge(a: Vector3i, b: Vector3i, w := 5) -> Array:
 		var c := Vector3i(roundi(a.x + d.x * t), a.y + roundi(d.y * t), roundi(a.z + d.z * t))
 		for s in range(-(w / 2), w - w / 2):
 			var cc := c + (Vector3i(0, 0, s) if along_x else Vector3i(s, 0, 0))
-			bp.append([cc, Blocks.PLANK if i % 5 else Blocks.HULL, 0])
+			bp.append([cc, Blocks.TILE if i % 5 else Blocks.HULL, 0])
 		if i % 3 == 0:
 			var e1 := c + (Vector3i(0, 1, -(w / 2)) if along_x else Vector3i(-(w / 2), 1, 0))
 			var e2 := c + (Vector3i(0, 1, w - w / 2 - 1) if along_x else Vector3i(w - w / 2 - 1, 1, 0))

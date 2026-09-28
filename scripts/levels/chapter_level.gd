@@ -28,6 +28,8 @@ func build() -> void:
 	if not backdrop:
 		GameState.reset_for_level(forms_at_start, true, kill_height, fragment_count)
 		GameState.seeds_total = seed_count
+		GameState.seeds_changed.emit(0)
+		GameState.fragments_changed.emit(0)
 	decor = Decor.new()
 	add_child(decor)
 	decor.setup(world)
