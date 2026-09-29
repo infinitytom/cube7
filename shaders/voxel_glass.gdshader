@@ -3,6 +3,7 @@ render_mode blend_mix, cull_back, depth_draw_opaque;
 #include "res://shaders/voxel_common.gdshaderinc"
 
 void fragment() {
+	if (occluder_cut(v_wpos, CAMERA_POSITION_WORLD, FRAGCOORD.xy)) discard;
 	float e = min(min(UV.x, 1.0 - UV.x), min(UV.y, 1.0 - UV.y));
 	float frame = 1.0 - smoothstep(0.03, 0.09, e);
 	ALBEDO = mix(COLOR.rgb * COLOR.a, vec3(0.95, 1.0, 1.0), frame * 0.6);

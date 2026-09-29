@@ -47,9 +47,13 @@ func _ready() -> void:
 	_cur_pitch = pitch
 	_cur_dist = distance
 	GameState.camera = self
+
 	GameState.shake.connect(func(a: float) -> void:
 		if bool(Settings.get_v("shake")):
 			_shake = maxf(_shake, a))
+
+func _exit_tree() -> void:
+	RenderingServer.global_shader_parameter_set(&"occl_target", Vector4.ZERO)
 
 ## 设置里的镜头灵敏度（0.25~2 倍）与上下反转
 func _sens() -> float:
@@ -136,6 +140,11 @@ func _process(delta: float) -> void:
 
 	var cam_pos := _pivot + dir * _cur_dist
 	global_transform = Transform3D(Basis.from_euler(Vector3(_cur_pitch, yaw, 0.0)), cam_pos)
+
+	# 告诉体素着色器 PIX 在哪：挡在中间的方块镂空
+	if _target:
+		var tp := _target.get_global_transform_interpolated().origin
+		RenderingServer.global_shader_parameter_set(&"occl_target", Vector4(tp.x, tp.y, tp.z, 1.0 if _cam.current and not model_view else 0.0))
 
 	# 镜头贴得太近时隐藏主角（带 0.2 秒滞回，避免闪烁）
 	if _target and _target.has_method("set_visual_hidden"):

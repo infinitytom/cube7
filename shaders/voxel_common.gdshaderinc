@@ -162,3 +162,27 @@ vec3 voxel_round_normal(vec2 uv) {
 	if (edge_bit(m, 8.0) > 0.5) bend += v * (1.0 - smoothstep(0.0, w, 1.0 - uv.y));
 	return normalize(n + bend * round_strength);
 }
+
+// 挡在镜头和 PIX 之间的方块：做成网点镂空，能透过去看到 PIX（树冠、墙角不再糊住画面）
+global uniform vec4 occl_target;   // xyz = PIX 位置，w = 1 启用
+float bayer4(vec2 p) {
+	ivec2 q = ivec2(mod(p, 4.0));
+	int i = q.x + q.y * 4;
+	int m[16] = int[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+	return (float(m[i]) + 0.5) / 16.0;
+}
+bool occluder_cut(vec3 wpos, vec3 cam, vec2 fragcoord) {
+	if (occl_target.w < 0.5) return false;
+	vec3 seg = occl_target.xyz - cam;
+	float L = length(seg);
+	if (L < 1.0) return false;
+	vec3 dir = seg / L;
+	float t = dot(wpos - cam, dir);
+	if (t < 0.05 || t > L - 0.9) return false;
+	float r = length(wpos - cam - dir * t);
+	float rad = mix(0.7, 1.5, clamp(t / L * 1.6, 0.0, 1.0));
+	if (r > rad) return false;
+	float k = 1.0 - r / rad;                      // 越靠近视线越透
+	k *= smoothstep(L - 0.9, L - 2.0, t);         // PIX 脚边的方块不镂空
+	return bayer4(fragcoord) < k * 0.85;
+}

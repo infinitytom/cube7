@@ -4,6 +4,7 @@ render_mode cull_back;
 uniform float strength = 2.0;
 
 void fragment() {
+	if (occluder_cut(v_wpos, CAMERA_POSITION_WORLD, FRAGCOORD.xy)) discard;
 	vec3 c = voxel_albedo(COLOR.rgb, COLOR.a, UV);
 	float pulse = 0.85 + 0.15 * sin(TIME * 2.0 + v_wpos.x * 0.7 + v_wpos.z * 0.5);
 	// 燃烧中 / 炭火 / 熔炉口：暗红底色上流动的亮黄裂纹，随时间闪烁（而不是一块发白的亮方块）

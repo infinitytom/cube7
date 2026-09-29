@@ -20,7 +20,7 @@ var done := false
 var clear_a := Vector3i.ZERO
 var clear_b := Vector3i(-1, -1, -1)
 var _ghost: MultiMeshInstance3D
-var _ghost_mat: StandardMaterial3D
+var _ghost_mat: ShaderMaterial
 var _label: Label3D
 var _pad: MeshInstance3D
 var _pad_mat: StandardMaterial3D
@@ -91,12 +91,9 @@ func _build_ghost() -> void:
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	var bm := BoxMesh.new()
 	bm.size = Vector3.ONE * VoxelWorld.CELL_M * 0.92
-	_ghost_mat = StandardMaterial3D.new()
-	_ghost_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_ghost_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_ghost_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_ghost_mat.albedo_color = Color(0.3, 0.85, 1.0, 0.24)
-	_ghost_mat.no_depth_test = false
+	_ghost_mat = ShaderMaterial.new()
+	_ghost_mat.shader = load("res://shaders/blueprint.gdshader")
+	_ghost_mat.set_shader_parameter("alpha", 0.24)
 	bm.material = _ghost_mat
 	mm.mesh = bm
 	var list: Array = []
@@ -150,7 +147,7 @@ func _process(delta: float) -> void:
 		return
 	_t += delta
 	_warn_t -= delta
-	_ghost_mat.albedo_color.a = 0.2 + 0.08 * sin(_t * 2.2)
+	_ghost_mat.set_shader_parameter("alpha", 0.2 + 0.08 * sin(_t * 2.2))
 	_pad_mat.albedo_color.a = 0.35 + 0.2 * sin(_t * 4.0)
 	if GameState.matter != _shown_matter:
 		_shown_matter = GameState.matter
@@ -206,7 +203,7 @@ func build(from: Vector3) -> void:
 		rebuilt.emit())
 	# 蓝图随建造进度渐隐
 	var tw2 := create_tween()
-	tw2.tween_property(_ghost_mat, "albedo_color:a", 0.0, n * step + 0.6)
+	tw2.tween_method(func(a: float) -> void: _ghost_mat.set_shader_parameter("alpha", a), 0.24, 0.0, n * step + 0.6)
 
 # ================================================================ 蓝图
 

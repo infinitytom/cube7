@@ -167,3 +167,10 @@ common/physics_interpolation=true
 [rendering]
 
 anti_aliasing/quality/msaa_3d=2
+
+[shader_globals]
+
+occl_target={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}

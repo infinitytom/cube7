@@ -38,6 +38,8 @@ func _ready() -> void:
 	level.set("world_path", NodePath("../VoxelWorld"))
 	add_child(level)
 	level.call("build")
+	if level.has_method("settle_enemies"):
+		level.call("settle_enemies")
 	world.track_damage = true
 	player.world = world
 	player.apply_form(MorphBall.BALL, false)

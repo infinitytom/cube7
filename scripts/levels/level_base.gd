@@ -280,3 +280,48 @@ func _find_site(x: int, z: int, clear: int) -> Vector3i:
 				if ok:
 					return Vector3i(cx, h, cz)
 	return Vector3i(-1, -1, -1)
+
+## 关卡搭好以后检查一遍：出生在半空（脚下几格内没有地面）的敌人，挪到附近最近的一块地面上。
+## 以前有几只敌人摆在了平台边缘外面，一开局就掉下去摔没了（还白送连击）。
+const _NO_GROUND_CHECK := ["rustfly.gd", "rust_worm.gd", "rust_heart.gd", "rust_airship.gd", "rust_bomb.gd"]
+func settle_enemies() -> void:
+	if world == null:
+		return
+	for e in get_tree().get_nodes_in_group("enemy"):
+		var n := e as Node3D
+		if n == null or n.get_script() == null or str(n.get_script().resource_path.get_file()) in _NO_GROUND_CHECK:
+			continue
+		var c := world.world_to_voxel(n.global_position + Vector3.UP * 0.1)
+		# 埋在地里（出生以后地形又被垫高了）：往上找到露天的地方
+		if world.get_block(c) != Blocks.AIR or world.get_block(c + Vector3i.UP) != Blocks.AIR:
+			for up in range(1, 8):
+				var q := c + Vector3i.UP * up
+				if world.get_block(q) == Blocks.AIR and world.get_block(q + Vector3i.UP) == Blocks.AIR:
+					n.global_position = world.voxel_top(q + Vector3i.DOWN) + Vector3.UP * 0.05
+					break
+			continue
+		if _solid_below(c, 3):
+			continue
+		var best := Vector3i(-1, -1, -1)
+		for r in range(1, 9):
+			for dz in range(-r, r + 1):
+				for dx in range(-r, r + 1):
+					if maxi(absi(dx), absi(dz)) != r or best.x >= 0:
+						continue
+					for dy in [0, -1, 1, -2, 2, -3]:
+						var q := c + Vector3i(dx, dy, dz)
+						if world.get_block(q) == Blocks.AIR and world.get_block(q + Vector3i.UP) == Blocks.AIR and world.get_block(q + Vector3i.DOWN) != Blocks.AIR:
+							best = q
+							break
+			if best.x >= 0:
+				break
+		if best.x >= 0:
+			n.global_position = world.voxel_top(best + Vector3i.DOWN) + Vector3.UP * 0.05
+		else:
+			push_warning("敌人出生点附近没有地面：%s %s" % [n.name, c])
+
+func _solid_below(c: Vector3i, depth: int) -> bool:
+	for k in range(0, depth + 1):
+		if world.get_block(c + Vector3i.DOWN * k) != Blocks.AIR:
+			return true
+	return false
