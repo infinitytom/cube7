@@ -344,9 +344,6 @@ func _build_logo() -> void:
 	sub.add_theme_constant_override("outline_size", 0)
 	sub.position = Vector2(168, 196)
 	_logo.add_child(sub)
-	var tag := UIKit.outline(UIKit.label("为了救下这颗星球，她把它拆成了方块。", 22, Color(1, 1, 1, 0.82)), 5, Color(0, 0, 0, 0.35))
-	tag.position = Vector2(168, 236)
-	_logo.add_child(tag)
 	for c in _logo.get_children():
 		(c as CanvasItem).modulate.a = 0.0
 
