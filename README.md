@@ -7,11 +7,11 @@
 
 ![演示](docs/media/demo.gif)
 
-完整实机演示视频见 [Releases](../../releases)。
+▶ [75 秒实机演示视频（mp4）](https://github.com/infinitytom/cube7/raw/downloads/VoxelArk-demo.mp4)
 
 ## 下载游玩（Windows）
 
-1. 打开 [Releases](../../releases)，下载最新的 `VoxelArk-windows-x64.zip`。
+1. 下载 [VoxelArk-windows-x64.zip](https://github.com/infinitytom/cube7/raw/downloads/VoxelArk-windows-x64.zip)（约 65 MB，v1.1）。
 2. 解压，双击 `VoxelArk.exe`。无需安装。
 3. 需要支持 Vulkan 或 Direct3D 12 的显卡（近几年的独显/核显都可以）。
 
