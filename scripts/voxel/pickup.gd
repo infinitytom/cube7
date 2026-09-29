@@ -9,21 +9,34 @@ var _vel := Vector3.ZERO
 var _age := 0.0
 var _speed := 4.0
 
+static var _script: GDScript
+static var _energy_mesh: SphereMesh
+static var _alive := 0
+const MAX_ALIVE := 60   ## 同时飞着的掉落物上限：超出的直接记账，不再生成节点（大破坏时不卡）
+
 static func spawn(parent: Node, k: String, pos: Vector3) -> void:
+	if _alive >= MAX_ALIVE:
+		if k == "coin":
+			GameState.add_coins(1)
+		else:
+			GameState.add_energy(1)
+		return
+	if _script == null:
+		_script = load("res://scripts/voxel/pickup.gd")
 	var p := Node3D.new()
-	p.set_script(load("res://scripts/voxel/pickup.gd"))
+	p.set_script(_script)
 	p.set("kind", k)
 	parent.add_child(p)
 	p.global_position = pos
 
+func _enter_tree() -> void:
+	_alive += 1
+
+func _exit_tree() -> void:
+	_alive -= 1
+
 func _ready() -> void:
 	var mi := MeshInstance3D.new()
-	var mat := StandardMaterial3D.new()
-	var c: Color = COLORS.get(kind, Color.WHITE)
-	mat.albedo_color = c
-	mat.emission_enabled = true
-	mat.emission = c
-	mat.emission_energy_multiplier = 2.0
 	if kind == "coin":
 		# Kenney 金币模型（缩到直径约 0.26 米）
 		var cm := Kit.mesh(Kit.COIN)
@@ -32,13 +45,20 @@ func _ready() -> void:
 		mi.scale = Vector3.ONE * (0.26 / maxf(ab.size.x, ab.size.y))
 		mi.position = -ab.get_center() * mi.scale.x
 	else:
-		var m := SphereMesh.new()
-		m.radius = 0.1
-		m.height = 0.2
-		m.radial_segments = 6
-		m.rings = 3
-		m.material = mat
-		mi.mesh = m
+		if _energy_mesh == null:
+			var mat := StandardMaterial3D.new()
+			var c: Color = COLORS["energy"]
+			mat.albedo_color = c
+			mat.emission_enabled = true
+			mat.emission = c
+			mat.emission_energy_multiplier = 2.0
+			_energy_mesh = SphereMesh.new()
+			_energy_mesh.radius = 0.1
+			_energy_mesh.height = 0.2
+			_energy_mesh.radial_segments = 6
+			_energy_mesh.rings = 3
+			_energy_mesh.material = mat
+		mi.mesh = _energy_mesh
 	add_child(mi)
 	_vel = Vector3(randf_range(-2, 2), randf_range(3, 5), randf_range(-2, 2))
 

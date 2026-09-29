@@ -198,15 +198,23 @@ func set_checkpoint(pos: Vector3, form := -1, locks := false) -> void:
 
 ## 顿帧：大破坏、打倒敌人时整个游戏停一下下，打击感
 var _hitstop_until := 0
+var _hitstop_on := false
 func hitstop(secs: float) -> void:
 	if OS.has_feature("headless") or DisplayServer.get_name() == "headless":
 		return
 	var now := Time.get_ticks_msec()
 	_hitstop_until = maxi(_hitstop_until, now + int(secs * 1000.0))
+	_hitstop_on = true
 	Engine.time_scale = 0.25
-	get_tree().create_timer(secs, true, false, true).timeout.connect(func() -> void:
-		if Time.get_ticks_msec() >= _hitstop_until - 5:
-			Engine.time_scale = 1.0)
+
+## 顿帧结束：按真实时间判断（以前用计时器回调，卡了一帧时计时器会提前触发、判断失败，
+## 结果 time_scale 一直停在 0.25——看起来就是“打完怪以后帧数变得很低”）
+func _hitstop_tick() -> void:
+	if _hitstop_on and Time.get_ticks_msec() >= _hitstop_until:
+		_hitstop_on = false
+		Engine.time_scale = 1.0
+	elif not _hitstop_on and Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
 
 ## 手柄震动：weak = 高频小马达，strong = 低频大马达（0..1），按设置里的强度缩放
 func rumble(weak: float, strong: float, secs: float) -> void:
@@ -223,6 +231,8 @@ func say(text: String) -> void:
 
 func _ready() -> void:
 	_bind_ui_pad()
+	# 暂停时也要能结束顿帧
+	get_tree().process_frame.connect(_hitstop_tick)
 	# 震屏的地方同时震手柄（撞碎东西、下砸、爆炸、Boss……）
 	shake.connect(func(a: float) -> void: rumble(clampf(a * 0.7, 0.0, 1.0), clampf(a * 1.1, 0.0, 1.0), 0.08 + a * 0.25))
 

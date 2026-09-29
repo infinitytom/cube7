@@ -57,8 +57,8 @@ func _ready() -> void:
 		_area.add_child(as_)
 		add_child(_area)
 	var w := get_tree().get_first_node_in_group("voxel_world") as VoxelWorld
-	if w:
-		w.cell_changed.connect(_on_block_changed)
+	if w and ground_cell != Vector3i(-1, -1, -1):
+		w.watch_cell(ground_cell, func() -> void: pop(global_position))
 
 func _physics_process(delta: float) -> void:
 	if _wobble > 0.0:

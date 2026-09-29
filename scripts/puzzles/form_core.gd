@@ -85,8 +85,7 @@ func _on_player_entered() -> void:
 	Music.duck(2.5, 0.2)
 	Music.set_default("bright")
 	# 慢动作 0.8 秒（真实时间）
-	Engine.time_scale = 0.25
-	get_tree().create_timer(0.2, true, false, true).timeout.connect(func() -> void: Engine.time_scale = 1.0)
+	GameState.hitstop(0.2)
 	GameState.shake.emit(0.4)
 	p.form_locked = false
 	p.apply_form(form, true)

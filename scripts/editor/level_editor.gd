@@ -49,6 +49,8 @@ var _test_bar: HBoxContainer
 var _test_t := 0.0
 var _mouse_cell := Vector3i(-1, -1, -1)
 var _mouse_face := Vector3i.ZERO
+var hub: LevelHub
+var _hub_busy := false
 
 func _ready() -> void:
 	var main := get_parent()
@@ -63,6 +65,8 @@ func _ready() -> void:
 	_build_cursor()
 	main.add_child(_markers)
 	_build_ui()
+	hub = LevelHub.new()
+	add_child(hub)
 	level.goal_reached.connect(_on_goal)
 	var sp := level.data.find_object("spawn")
 	if sp >= 0:
@@ -551,9 +555,16 @@ func _build_ui() -> void:
 	UIKit.place(_menu, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-300, -300, 300, 300))
 	_menu.visible = false
 	root.add_child(_menu)
+	# 菜单项多（关卡库列表）时可以滚动；手柄移动焦点会自动滚到可见处
+	var scroll := ScrollContainer.new()
+	scroll.follow_focus = true
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(540, 548)
+	_menu.add_child(scroll)
 	_menu_list = VBoxContainer.new()
 	_menu_list.add_theme_constant_override("separation", 8)
-	_menu.add_child(_menu_list)
+	_menu_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_menu_list)
 
 func _refresh_bar() -> void:
 	var list: Array = LevelData.BLOCKS if cat == 0 else LevelData.OBJECTS
@@ -596,6 +607,7 @@ func _open_menu(page := "main") -> void:
 				_start_test())
 			_mbtn("保存到……", func() -> void: _open_menu("save"))
 			_mbtn("读取……", func() -> void: _open_menu("load"))
+			_mbtn("GitHub 关卡库……", func() -> void: _open_menu("hub"))
 			_mbtn("复制分享码", func() -> void:
 				DisplayServer.clipboard_set(level.data.share_code())
 				_menu.visible = false
@@ -622,6 +634,12 @@ func _open_menu(page := "main") -> void:
 				var nm := LevelData.slot_name(i)
 				var b := _mbtn("位置 %d   %s" % [i + 1, nm if nm != "" else "（空）"], func() -> void:
 					if page == "save":
+						# 防止重复：别的位置已经存着一模一样的关卡就不再存一份
+						var dup := level.data.duplicate_slot(i)
+						if dup >= 0:
+							_menu.visible = false
+							_say("位置 %d 已经存着一模一样的关卡，没有重复保存" % (dup + 1))
+							return
 						level.data.name = "我的关卡 %d" % (i + 1) if level.data.name.begins_with("我的关卡") or level.data.name == "" else level.data.name
 						level.data.save_slot(i)
 						_menu.visible = false
@@ -637,14 +655,98 @@ func _open_menu(page := "main") -> void:
 				if first == null and not b.disabled:
 					first = b
 			_mbtn("返回", func() -> void: _open_menu("main"))
+		"hub":
+			_menu_list.add_child(UIKit.label("GitHub 关卡库", 28, UIKit.TEXT, true))
+			var info := UIKit.label("仓库：%s\n令牌：%s\n同样内容的关卡（改名也算）只会存一份。" % [hub.repo, "已设置" if hub.token != "" else "未设置（只能浏览；上传会打开浏览器提交）"], 17, UIKit.DIM)
+			info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			info.custom_minimum_size.x = 520
+			_menu_list.add_child(info)
+			first = _mbtn("上传当前关卡", _hub_upload)
+			_mbtn("浏览关卡库", func() -> void: _open_menu("hub_list"))
+			_mbtn("粘贴仓库地址（剪贴板）", func() -> void:
+				var r := LevelHub.parse_repo(DisplayServer.clipboard_get())
+				if r == "":
+					_say("剪贴板里不是 GitHub 仓库地址（owner/仓库名）")
+				else:
+					hub.repo = r
+					hub.save_cfg()
+					_say("关卡库改成了 " + r)
+				_open_menu("hub"))
+			_mbtn("粘贴 GitHub 令牌（剪贴板）", func() -> void:
+				var t := DisplayServer.clipboard_get().strip_edges()
+				if t.length() < 20 or t.contains(" ") or t.contains("\n"):
+					_say("剪贴板里不像是 GitHub 令牌")
+				else:
+					hub.token = t
+					hub.save_cfg()
+					DisplayServer.clipboard_set("")
+					_say("令牌已保存（只存在这台电脑上）")
+				_open_menu("hub"))
+			if hub.token != "":
+				_mbtn("清除令牌", func() -> void:
+					hub.token = ""
+					hub.save_cfg()
+					_open_menu("hub"))
+			_mbtn("返回", func() -> void: _open_menu("main"))
+		"hub_list":
+			_menu_list.add_child(UIKit.label("GitHub 关卡库", 28, UIKit.TEXT, true))
+			var wait := UIKit.label("正在读取 %s ……" % hub.repo, 18, UIKit.DIM)
+			_menu_list.add_child(wait)
+			_hub_list(wait)
 	if first:
 		first.grab_focus.call_deferred()
+
+func _hub_upload() -> void:
+	if _hub_busy:
+		return
+	_hub_busy = true
+	_say("正在检查关卡库……")
+	var res: Dictionary = await hub.upload(level.data)
+	_hub_busy = false
+	match str(res.status):
+		"need_token":
+			# 没有令牌：用浏览器在 GitHub 网页上提交（文件名就是指纹，重复的已经在上面拦下了）
+			OS.shell_open(hub.browser_submit_url(level.data))
+			_menu.visible = false
+			_say("已在浏览器打开提交页面，点“Commit / Propose changes”即可")
+		_:
+			_menu.visible = false
+			_say(str(res.msg))
+
+func _hub_list(wait: Label) -> void:
+	if _hub_busy:
+		return
+	_hub_busy = true
+	var res: Dictionary = await hub.list_levels()
+	_hub_busy = false
+	if not _menu.visible or not is_instance_valid(wait):
+		return
+	wait.text = str(res.msg)
+	wait.visible = str(res.msg) != ""
+	var first: Button
+	var mine := {}
+	for i in LevelData.SLOTS:
+		var d := LevelData.load_slot(i)
+		if d:
+			mine[d.content_hash()] = i
+	for it in res.levels:
+		var d: LevelData = it.data
+		var h := d.content_hash()
+		var tag := "   （本地位置 %d 已有）" % (int(mine[h]) + 1) if mine.has(h) else ""
+		var b := _mbtn("%s%s" % [it.name, tag], func() -> void:
+			_menu.visible = false
+			_load(d)
+			_say("已读取：" + d.name))
+		if first == null:
+			first = b
+	var back := _mbtn("返回", func() -> void: _open_menu("hub"))
+	(first if first else back).grab_focus.call_deferred()
 
 func _mbtn(t: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = t
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.custom_minimum_size = Vector2(520, 50)
+	b.custom_minimum_size = Vector2(520, 46)
 	UIKit.juice(b)
 	b.pressed.connect(cb)
 	_menu_list.add_child(b)

@@ -45,6 +45,10 @@ func _ready() -> void:
 		var shots := Node.new()
 		shots.set_script(load("res://scripts/debug/ui_shots.gd"))
 		get_tree().root.add_child.call_deferred(shots)
+	if args.any(func(a: String) -> bool: return a.begins_with("--titletest")):
+		var tt := Node.new()
+		tt.set_script(load("res://scripts/debug/test_title.gd"))
+		get_tree().root.add_child.call_deferred(tt)
 	var level := AreaGreenhouse.new()
 	level.backdrop = true
 	level.world_path = NodePath("../VoxelWorld")
@@ -193,6 +197,8 @@ func _build_ui() -> void:
 	_ui = Control.new()
 	_ui.theme = UIKit.theme()
 	_ui.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# 根节点不拦鼠标：否则“按任意键开始”时鼠标点击被它吃掉，传不到 _unhandled_input
+	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_ui)
 	# 暗角
 	var vg := Gradient.new()
@@ -255,12 +261,15 @@ func _build_ui() -> void:
 	_press.add_theme_constant_override("separation", 10)
 	UIKit.place(_press, Vector4(0, 1, 0, 1), Vector4(128, -200, 800, -150))
 	_press.modulate.a = 0.0
+	_press.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.add_child(_press)
 	# 主菜单
 	_menu = VBoxContainer.new()
 	_menu.add_theme_constant_override("separation", 2)
-	UIKit.place(_menu, Vector4(0, 1, 0, 1), Vector4(96, -520, 96 + MENU_W, -120))
+	# 菜单占标题下方到底部提示之间的区域；打开菜单时标题会缩小上移，给菜单让位
+	UIKit.place(_menu, Vector4(0, 0, 0, 1), Vector4(96, 300, 96 + MENU_W, -104))
 	_menu.alignment = BoxContainer.ALIGNMENT_END
+	_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_menu.visible = false
 	_ui.add_child(_menu)
 	# 底部按键提示
@@ -268,10 +277,11 @@ func _build_ui() -> void:
 	_hints.add_theme_constant_override("separation", 26)
 	UIKit.place(_hints, Vector4(0, 1, 0, 1), Vector4(128, -70, 800, -34))
 	_hints.modulate.a = 0.0
+	_hints.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.add_child(_hints)
 	_refresh_glyphs()
 	# 版本号
-	var ver := UIKit.label("原型 v0.9  ·  第一章 ~ 第二章", 15, Color(1, 1, 1, 0.45))
+	var ver := UIKit.label("v1.1  ·  全六章 + 关卡编辑器", 15, Color(1, 1, 1, 0.45))
 	UIKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-280, -52, -40, -26))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ui.add_child(ver)
@@ -306,6 +316,7 @@ func _build_logo() -> void:
 	_emblem = CubeEmblem.new()
 	_emblem.position = Vector2(0, 14)
 	_emblem.size = Vector2(150, 150)
+	_emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_logo.add_child(_emblem)
 	_title_label = UIKit.label("方舟星球", 124, Color.WHITE, true)
 	UIKit.outline(_title_label, 10, Color(0.04, 0.1, 0.22, 0.75))
@@ -435,13 +446,13 @@ func _item(text: String, cb: Callable, sub := "", accent := UIKit.ACCENT) -> But
 	b.text = text
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_ALL
-	b.custom_minimum_size = Vector2(MENU_W, 76 if sub != "" else 58)
+	b.custom_minimum_size = Vector2(MENU_W, 64 if sub != "" else 46)
 	var empty := StyleBoxEmpty.new()
 	empty.content_margin_left = 30
-	empty.content_margin_bottom = 26 if sub != "" else 0
+	empty.content_margin_bottom = 22 if sub != "" else 0
 	for st in ["normal", "hover", "pressed", "focus", "disabled", "hover_pressed"]:
 		b.add_theme_stylebox_override(st, empty)
-	b.add_theme_font_size_override("font_size", 30)
+	b.add_theme_font_size_override("font_size", 27)
 	b.add_theme_color_override("font_color", Color(1, 1, 1, 0.62))
 	b.add_theme_color_override("font_hover_color", Color.WHITE)
 	b.add_theme_color_override("font_focus_color", Color.WHITE)
@@ -472,8 +483,8 @@ func _item(text: String, cb: Callable, sub := "", accent := UIKit.ACCENT) -> But
 	bar.scale.y = 0.0
 	b.add_child(bar)
 	if sub != "":
-		var sl := UIKit.label(sub, 17, Color(1, 1, 1, 0.55))
-		UIKit.place(sl, Vector4(0, 1, 1, 1), Vector4(32, -34, 0, -8))
+		var sl := UIKit.label(sub, 16, Color(1, 1, 1, 0.55))
+		UIKit.place(sl, Vector4(0, 1, 1, 1), Vector4(32, -30, 0, -6))
 		sl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(sl)
 	b.focus_entered.connect(func() -> void:
@@ -596,7 +607,12 @@ func _open_chapters(reached: int, ups: Dictionary) -> void:
 		first.grab_focus.call_deferred()
 
 func _logo_show(on: bool) -> void:
-	create_tween().tween_property(_logo, "modulate:a", 1.0 if on else 0.0, 0.25)
+	var tw := create_tween().set_parallel()
+	tw.tween_property(_logo, "modulate:a", 1.0 if on else 0.0, 0.25)
+	# 主菜单出现后标题缩小、上移，免得和菜单项叠在一起
+	if on and _state == "menu":
+		tw.tween_property(self, "_logo_y", 34.0, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(_logo, "scale", Vector2(0.62, 0.62), 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 func _dim_show(on: bool) -> void:
 	create_tween().tween_property(_dim, "modulate:a", 1.0 if on else 0.0, 0.25)

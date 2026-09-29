@@ -142,6 +142,13 @@ func vget(p: Vector3i) -> int:
 		return Blocks.AIR
 	return data[p.x + size.x * (p.y + size.y * p.z)]
 
+## 某一格被挖空时回调一次（道具放在地面上：地面没了就弹飞）。比每个道具都连 cell_changed 快得多
+var _cell_watch := {}
+func watch_cell(cell: Vector3i, cb: Callable) -> void:
+	if not _cell_watch.has(cell):
+		_cell_watch[cell] = []
+	(_cell_watch[cell] as Array).append(cb)
+
 func vset(p: Vector3i, t: int) -> void:
 	if not vin(p):
 		return
@@ -162,7 +169,14 @@ func vset(p: Vector3i, t: int) -> void:
 	if Blocks.ignites[t] == 1 and fire:
 		fire.sources[p] = true
 	block_changed.emit(p, old, t)
-	cell_changed.emit(Vector3i(p.x >> 1, p.y >> 1, p.z >> 1), old, t)
+	var cc := Vector3i(p.x >> 1, p.y >> 1, p.z >> 1)
+	cell_changed.emit(cc, old, t)
+	if t == Blocks.AIR and _cell_watch.has(cc):
+		var list: Array = _cell_watch[cc]
+		_cell_watch.erase(cc)
+		for cb: Callable in list:
+			if cb.is_valid():
+				cb.call()
 
 ## 关卡搭建用：批量填充，不发信号
 func vfill(a: Vector3i, b: Vector3i, t: int) -> void:
@@ -576,8 +590,15 @@ const RESTORABLE := [Blocks.GRASS, Blocks.DIRT, Blocks.SAND, Blocks.ROCK, Blocks
 	Blocks.CLIFF_C, Blocks.GLOWSHROOM, Blocks.DARKROCK, Blocks.DARKROCK_B, Blocks.TILE, Blocks.HULL, Blocks.HULL_DARK,
 	Blocks.RUSTDUNE, Blocks.RUSTROCK]
 
+static var _restorable_lut := PackedByteArray()
 func log_damage(p: Vector3i, t: int) -> void:
-	if track_damage and not damage.has(p) and t in RESTORABLE:
+	if not track_damage:
+		return
+	if _restorable_lut.is_empty():
+		_restorable_lut.resize(256)
+		for r in RESTORABLE:
+			_restorable_lut[r] = 1
+	if _restorable_lut[t] == 1 and not damage.has(p):
 		damage[p] = t
 
 ## 重构波：以 center 为圆心，radius 米以内被砸掉的地形在 dur 秒内由近到远一格格飞回来。返回飞回来的块数
@@ -965,22 +986,30 @@ func _process(delta: float) -> void:
 
 const REBUILD_BUDGET_MS := 6.0
 
-## 重建脏区块：先重建离主角最近的，每帧最多花 REBUILD_BUDGET_MS 毫秒，剩下的留到下一帧
+## 重建脏区块：按渲染组（GROUP³ 个小区块）来，离主角最近的组先重建。
+## 每帧的预算把“合并网格 + 重建碰撞”（最贵的一步）也算进去；至少处理一个组，剩下的留到后面几帧
 func _rebuild_dirty() -> void:
-	var keys := _dirty.keys()
+	var groups := {}
+	for c: Vector3i in _dirty:
+		var g := Vector3i(c.x >> 1, c.y >> 1, c.z >> 1)
+		if not groups.has(g):
+			groups[g] = []
+		(groups[g] as Array).append(c)
+	var gkeys := groups.keys()
 	var pl := GameState.player as Node3D
-	if pl and keys.size() > 1:
-		var pc := to_v(pl.global_position) / CHUNK
-		keys.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return (a - pc).length_squared() < (b - pc).length_squared())
+	if pl and gkeys.size() > 1:
+		var pg := to_v(pl.global_position) / (CHUNK * GROUP)
+		gkeys.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return (a - pg).length_squared() < (b - pg).length_squared())
 	var t0 := Time.get_ticks_usec()
-	for i in keys.size():
-		var c: Vector3i = keys[i]
-		_dirty.erase(c)
-		_build_chunk(c)
-		# 至少重建两个（通常就是主角撞到的地方），再看时间预算
-		if i >= 1 and (Time.get_ticks_usec() - t0) > REBUILD_BUDGET_MS * 1000.0:
+	for i in gkeys.size():
+		var g: Vector3i = gkeys[i]
+		for c: Vector3i in groups[g]:
+			_dirty.erase(c)
+			_build_chunk(c)
+		_commit_group(g)
+		_gdirty.erase(g)
+		if (Time.get_ticks_usec() - t0) > REBUILD_BUDGET_MS * 1000.0:
 			break
-	_commit_groups()
 
 func _step_falling() -> void:
 	var current := _falling.keys()
@@ -1022,11 +1051,26 @@ func rebuild_all() -> void:
 	print("[VoxelWorld] 全部区块生成耗时 %d ms" % (Time.get_ticks_msec() - t0))
 
 func _mark_dirty_around(p: Vector3i) -> void:
-	for dz in range(-1, 2):
-		for dy in range(-1, 2):
-			for dx in range(-1, 2):
-				var q := p + Vector3i(dx, dy, dz)
-				_dirty[Vector3i(floori(q.x / float(CHUNK)), floori(q.y / float(CHUNK)), floori(q.z / float(CHUNK)))] = true
+	# 只有贴着区块边界的体素才会影响相邻区块（每次破坏几百个体素，这里要快）
+	var cx := p.x >> 3
+	var cy := p.y >> 3
+	var cz := p.z >> 3
+	var lx := p.x & 7
+	var ly := p.y & 7
+	var lz := p.z & 7
+	var x0 := cx - 1 if lx == 0 else cx
+	var x1 := cx + 1 if lx == 7 else cx
+	var y0 := cy - 1 if ly == 0 else cy
+	var y1 := cy + 1 if ly == 7 else cy
+	var z0 := cz - 1 if lz == 0 else cz
+	var z1 := cz + 1 if lz == 7 else cz
+	if x0 == x1 and y0 == y1 and z0 == z1:
+		_dirty[Vector3i(cx, cy, cz)] = true
+		return
+	for z in range(z0, z1 + 1):
+		for y in range(y0, y1 + 1):
+			for x in range(x0, x1 + 1):
+				_dirty[Vector3i(x, y, z)] = true
 
 func _mark_dirty_box(lo: Vector3i, hi: Vector3i) -> void:
 	for cz in range(floori((lo.z - 1) / float(CHUNK)), floori((hi.z + 1) / float(CHUNK)) + 1):

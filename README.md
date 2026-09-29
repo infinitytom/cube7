@@ -117,3 +117,15 @@ godot --headless --path . -- --autotest=gearworks    # 第二章整关（含 Bos
 - **手柄**：✕/A 确认、○/B 返回；设置界面整行高亮，左右调数值；手柄震动可调强度。
 - **关卡编辑器**（标题画面）：摆方块和物件（出生点、终点、检查点、金币、宝箱、种子、弹跳垫、上升气流、6 种敌人），一键试玩；5 个本地存档位；用「CUBE7:」分享码分享。
 - **测试**：`--autotest`、`--autotest=greenhouse|gearworks|abyss|city|rust|core`；编辑器用 `--editor --debugscript=res://scripts/debug/test_editor.gd`；手柄菜单用 `--debugscript=res://scripts/debug/test_ui_pad.gd`。
+
+## v1.1：修复与 GitHub 关卡库
+- 标题画面：鼠标左键可以开始、可以点菜单项；打开主菜单时标题缩小上移，菜单不再被遮挡。
+- 掉帧：修复“顿帧”结束判断的 bug（卡一帧时计时器提前触发，time_scale 永远停在 0.25，看起来像帧数骤降）；
+  破坏开销约降到 1/3（区块脏标记只在边界扩散、道具改为按格订阅、掉落物上限 60、区块重建按渲染组计入预算）。
+- GitHub 关卡库（编辑器菜单 →「GitHub 关卡库……」）：
+  - 仓库默认 `degnrui/cube7-levels`，可从剪贴板粘贴别的仓库地址。关卡存为 `levels/<内容指纹16位>.txt`，内容是分享码。
+  - 内容指纹 = 方块 + 物件的 SHA-256（不含名字），改名重传也会被识别为重复；本地保存位之间同样防重复。
+  - 浏览不需要登录；上传需要对该仓库有 Contents 写权限的令牌（从剪贴板粘贴，只存在本机 user://github.cfg）。
+    没有令牌时打开浏览器，在 GitHub 网页上提交同名文件。
+- 新测试：`-- --titletest[=截图目录]`（标题画面，需窗口/xvfb）、`--editor --debugscript=res://scripts/debug/test_hub.gd`（需本地假服务器）、
+  `--chapter=N --debugscript=res://scripts/debug/prof_break.gd`（破坏/打怪性能剖析）。

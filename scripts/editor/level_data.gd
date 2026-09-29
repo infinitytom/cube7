@@ -6,6 +6,7 @@ extends RefCounted
 const SIZE := Vector3i(72, 48, 72)
 const BASE_Y := 10                   ## 初始地面高度（第一层空气）
 const DIR := "user://levels"
+const SLOTS := 5
 
 ## 方块调色板：[方块, 名称]
 const BLOCKS := [
@@ -103,6 +104,39 @@ static func from_dict(d: Dictionary) -> LevelData:
 	for o in d.get("objs", []):
 		ld.objects.append({"id": str(o[0]), "cell": Vector3i(int(o[1]), int(o[2]), int(o[3])), "yaw": float(o[4]) if o.size() > 4 else 0.0})
 	return ld
+
+## 关卡内容指纹（不含名字）：用来防止重复——改个名字再传一遍也会被认出来
+func content_hash() -> String:
+	var d := to_dict()
+	var runs: Array = d.runs
+	runs.sort_custom(func(a: Array, b: Array) -> bool:
+		for k in 5:
+			if a[k] != b[k]:
+				return a[k] < b[k]
+		return false)
+	var objs: Array = []
+	for o in objects:
+		objs.append("%s:%d,%d,%d:%d" % [o.id, o.cell.x, o.cell.y, o.cell.z, roundi(rad_to_deg(float(o.get("yaw", 0.0))))])
+	objs.sort()
+	var parts := PackedStringArray()
+	for r in runs:
+		parts.append("%d,%d,%d,%d,%d" % r)
+	var text := ";".join(parts) + "|" + ";".join(PackedStringArray(objs))
+	var h := HashingContext.new()
+	h.start(HashingContext.HASH_SHA256)
+	h.update(text.to_utf8_buffer())
+	return h.finish().hex_encode()
+
+## 本地已存的关卡里，和这一关内容一模一样的位置（没有返回 -1）
+func duplicate_slot(except := -1) -> int:
+	var me := content_hash()
+	for i in SLOTS:
+		if i == except:
+			continue
+		var d := load_slot(i)
+		if d and d.content_hash() == me:
+			return i
+	return -1
 
 func share_code() -> String:
 	var bytes := JSON.stringify(to_dict()).to_utf8_buffer()
