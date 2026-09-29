@@ -547,7 +547,7 @@ func _show_menu() -> void:
 		_item("章节选择", func() -> void: _open_chapters(reached, best_up), "重玩到过的任意一章")
 	_item("关卡编辑器", func() -> void:
 		Music.stop()
-		Flow.goto_game("editor"), "自己搭关卡、试玩、用分享码分享给朋友")
+		Flow.goto_game("editor"), "自己搭关卡、试玩、导出文件分享给朋友")
 	_item("设置", func() -> void:
 		_state = "settings"
 		_menu.visible = false

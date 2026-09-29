@@ -1,13 +1,13 @@
 class_name LevelEditor
 extends Node
-## 关卡编辑器（游戏内）：摆方块、摆物件（出生点、终点、敌人、机关、金币……）、一键试玩、存到本地、用分享码分享。
+## 关卡编辑器（游戏内）：摆方块、摆物件（出生点、终点、敌人、机关、金币……）、一键试玩、存到本地、导出成文件分享。
 ##
 ## 手柄：
 ##   左摇杆 移动光标（光标自动贴在这一列的最上面）   右摇杆 转镜头
 ##   ✕ 放置（按住拖动连续放）   ○ 删除（按住拖动连续删）
 ##   L1 / R1 换方块（或物件）   □ 切换「方块 / 物件」
 ##   十字键 ↑↓ 光标抬高 / 降低   十字键 ←→ 转动物件朝向
-##   △ 试玩（试玩中按 Options 回来）   Options 菜单（保存、读取、分享码、新建、返回标题）
+##   △ 试玩（试玩中按 Options 回来）   Options 菜单（保存、读取、导出、导入、新建、返回标题）
 ## 键盘鼠标：
 ##   鼠标指到哪里光标就在哪里；左键放、右键删、滚轮换方块、中键拖动转镜头
 ##   WASD 移动光标   R / F 光标抬高 / 降低   X 转朝向   Tab 方块 / 物件   T 或 V 试玩   Esc 菜单   Ctrl+滚轮 缩放
@@ -49,8 +49,6 @@ var _test_bar: HBoxContainer
 var _test_t := 0.0
 var _mouse_cell := Vector3i(-1, -1, -1)
 var _mouse_face := Vector3i.ZERO
-var hub: LevelHub
-var _hub_busy := false
 
 func _ready() -> void:
 	var main := get_parent()
@@ -65,8 +63,8 @@ func _ready() -> void:
 	_build_cursor()
 	main.add_child(_markers)
 	_build_ui()
-	hub = LevelHub.new()
-	add_child(hub)
+	# 把 .cube7 文件拖进游戏窗口就能导入
+	get_window().files_dropped.connect(_on_files_dropped)
 	level.goal_reached.connect(_on_goal)
 	var sp := level.data.find_object("spawn")
 	if sp >= 0:
@@ -607,19 +605,16 @@ func _open_menu(page := "main") -> void:
 				_start_test())
 			_mbtn("保存到……", func() -> void: _open_menu("save"))
 			_mbtn("读取……", func() -> void: _open_menu("load"))
-			_mbtn("GitHub 关卡库……", func() -> void: _open_menu("hub"))
-			_mbtn("复制分享码", func() -> void:
-				DisplayServer.clipboard_set(level.data.share_code())
+			_mbtn("导出（分享给朋友）", func() -> void:
+				var r: Dictionary = level.data.export_file()
 				_menu.visible = false
-				_say("分享码已复制到剪贴板——发给朋友，他们在「粘贴分享码」里就能玩到"))
-			_mbtn("粘贴分享码", func() -> void:
-				var d := LevelData.from_share_code(DisplayServer.clipboard_get())
-				_menu.visible = false
-				if d == null:
-					_say("剪贴板里没有有效的分享码（应该以 CUBE7: 开头）")
+				if not r.ok:
+					_say("导出失败：写不进 " + str(r.path))
+				elif r.dup:
+					_say("这一关已经导出过了：" + str(r.path).get_file())
 				else:
-					_load(d)
-					_say("已导入：" + d.name))
+					_say("已导出：文档/立方7关卡/%s，把这个文件发给朋友就行" % str(r.path).get_file()))
+			_mbtn("导入……", func() -> void: _open_menu("import"))
 			_mbtn("新建（清空）", func() -> void:
 				_menu.visible = false
 				_load(LevelData.new_default())
@@ -655,92 +650,47 @@ func _open_menu(page := "main") -> void:
 				if first == null and not b.disabled:
 					first = b
 			_mbtn("返回", func() -> void: _open_menu("main"))
-		"hub":
-			_menu_list.add_child(UIKit.label("GitHub 关卡库", 28, UIKit.TEXT, true))
-			var info := UIKit.label("仓库：%s\n令牌：%s\n同样内容的关卡（改名也算）只会存一份。" % [hub.repo, "已设置" if hub.token != "" else "未设置（只能浏览；上传会打开浏览器提交）"], 17, UIKit.DIM)
-			info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			info.custom_minimum_size.x = 520
-			_menu_list.add_child(info)
-			first = _mbtn("上传当前关卡", _hub_upload)
-			_mbtn("浏览关卡库", func() -> void: _open_menu("hub_list"))
-			_mbtn("粘贴仓库地址（剪贴板）", func() -> void:
-				var r := LevelHub.parse_repo(DisplayServer.clipboard_get())
-				if r == "":
-					_say("剪贴板里不是 GitHub 仓库地址（owner/仓库名）")
-				else:
-					hub.repo = r
-					hub.save_cfg()
-					_say("关卡库改成了 " + r)
-				_open_menu("hub"))
-			_mbtn("粘贴 GitHub 令牌（剪贴板）", func() -> void:
-				var t := DisplayServer.clipboard_get().strip_edges()
-				if t.length() < 20 or t.contains(" ") or t.contains("\n"):
-					_say("剪贴板里不像是 GitHub 令牌")
-				else:
-					hub.token = t
-					hub.save_cfg()
-					DisplayServer.clipboard_set("")
-					_say("令牌已保存（只存在这台电脑上）")
-				_open_menu("hub"))
-			if hub.token != "":
-				_mbtn("清除令牌", func() -> void:
-					hub.token = ""
-					hub.save_cfg()
-					_open_menu("hub"))
-			_mbtn("返回", func() -> void: _open_menu("main"))
-		"hub_list":
-			_menu_list.add_child(UIKit.label("GitHub 关卡库", 28, UIKit.TEXT, true))
-			var wait := UIKit.label("正在读取 %s ……" % hub.repo, 18, UIKit.DIM)
-			_menu_list.add_child(wait)
-			_hub_list(wait)
+		"import":
+			_menu_list.add_child(UIKit.label("导入关卡", 28, UIKit.TEXT, true))
+			var tip := UIKit.label("把朋友发来的 .cube7 文件放进「文档/立方7关卡」，或者直接拖进游戏窗口。", 17, UIKit.DIM)
+			tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			tip.custom_minimum_size.x = 520
+			_menu_list.add_child(tip)
+			var mine := {}
+			for i in LevelData.SLOTS:
+				var sd := LevelData.load_slot(i)
+				if sd:
+					mine[sd.content_hash()] = i
+			for it in LevelData.list_exports():
+				var d: LevelData = it.data
+				var h := d.content_hash()
+				var tag := "   （和本地位置 %d 一样）" % (int(mine[h]) + 1) if mine.has(h) else ""
+				var b := _mbtn(d.name + tag, func() -> void:
+					_menu.visible = false
+					_load(d)
+					_say("已导入：" + d.name))
+				if first == null:
+					first = b
+			_mbtn("打开关卡文件夹", func() -> void:
+				DirAccess.make_dir_recursive_absolute(LevelData.export_dir())
+				OS.shell_open(LevelData.export_dir()))
+			var back := _mbtn("返回", func() -> void: _open_menu("main"))
+			if first == null:
+				first = back
 	if first:
 		first.grab_focus.call_deferred()
 
-func _hub_upload() -> void:
-	if _hub_busy:
-		return
-	_hub_busy = true
-	_say("正在检查关卡库……")
-	var res: Dictionary = await hub.upload(level.data)
-	_hub_busy = false
-	match str(res.status):
-		"need_token":
-			# 没有令牌：用浏览器在 GitHub 网页上提交（文件名就是指纹，重复的已经在上面拦下了）
-			OS.shell_open(hub.browser_submit_url(level.data))
-			_menu.visible = false
-			_say("已在浏览器打开提交页面，点“Commit / Propose changes”即可")
-		_:
-			_menu.visible = false
-			_say(str(res.msg))
-
-func _hub_list(wait: Label) -> void:
-	if _hub_busy:
-		return
-	_hub_busy = true
-	var res: Dictionary = await hub.list_levels()
-	_hub_busy = false
-	if not _menu.visible or not is_instance_valid(wait):
-		return
-	wait.text = str(res.msg)
-	wait.visible = str(res.msg) != ""
-	var first: Button
-	var mine := {}
-	for i in LevelData.SLOTS:
-		var d := LevelData.load_slot(i)
+func _on_files_dropped(files: PackedStringArray) -> void:
+	for f in files:
+		var d := LevelData.load_file(f)
 		if d:
-			mine[d.content_hash()] = i
-	for it in res.levels:
-		var d: LevelData = it.data
-		var h := d.content_hash()
-		var tag := "   （本地位置 %d 已有）" % (int(mine[h]) + 1) if mine.has(h) else ""
-		var b := _mbtn("%s%s" % [it.name, tag], func() -> void:
+			if testing:
+				_stop_test()
 			_menu.visible = false
 			_load(d)
-			_say("已读取：" + d.name))
-		if first == null:
-			first = b
-	var back := _mbtn("返回", func() -> void: _open_menu("hub"))
-	(first if first else back).grab_focus.call_deferred()
+			_say("已导入：" + d.name)
+			return
+	_say("这不是立方7的关卡文件（.cube7）")
 
 func _mbtn(t: String, cb: Callable) -> Button:
 	var b := Button.new()

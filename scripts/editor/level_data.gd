@@ -1,6 +1,7 @@
 class_name LevelData
 extends RefCounted
-## 关卡编辑器的数据：方块（稀疏字典）+ 物件列表。存成 JSON；分享码 = gzip 压缩的 JSON 转 base64，前缀 CUBE7:
+## 关卡编辑器的数据：方块（稀疏字典）+ 物件列表。存成 JSON。
+## 分享：导出成「文档/立方7关卡/关卡名.cube7」文件，发给朋友，朋友放进同一个文件夹（或拖进游戏窗口）就能导入。
 ## 坐标单位：格（0.5 米）。
 
 const SIZE := Vector3i(72, 48, 72)
@@ -138,26 +139,68 @@ func duplicate_slot(except := -1) -> int:
 			return i
 	return -1
 
-func share_code() -> String:
-	var bytes := JSON.stringify(to_dict()).to_utf8_buffer()
-	var z := bytes.compress(FileAccess.COMPRESSION_GZIP)
-	return "CUBE7:%d:%s" % [bytes.size(), Marshalls.raw_to_base64(z)]
+# ================================================================ 导出 / 导入（分享用的文件）
 
-static func from_share_code(code: String) -> LevelData:
-	code = code.strip_edges()
-	if not code.begins_with("CUBE7:"):
+const EXT := "cube7"
+
+## 导出文件夹：「文档/立方7关卡」，拿不到文档目录就放在存档目录里
+static func export_dir() -> String:
+	var docs := OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS)
+	if docs == "" or not DirAccess.dir_exists_absolute(docs):
+		return ProjectSettings.globalize_path("user://exports")
+	return docs.path_join("立方7关卡")
+
+static func load_file(path: String) -> LevelData:
+	if not FileAccess.file_exists(path):
 		return null
-	var parts := code.split(":", false, 2)
-	if parts.size() < 3:
-		return null
-	var raw := Marshalls.base64_to_raw(parts[2])
-	var bytes := raw.decompress(int(parts[1]), FileAccess.COMPRESSION_GZIP)
-	if bytes.is_empty():
-		return null
-	var d = JSON.parse_string(bytes.get_string_from_utf8())
-	if not (d is Dictionary):
-		return null
-	return from_dict(d)
+	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return from_dict(d) if d is Dictionary and d.has("runs") else null
+
+## 导出文件夹里所有关卡：[{"path": String, "data": LevelData}]（内容一样的只列一次）
+static func list_exports() -> Array:
+	var out: Array = []
+	var dir := export_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		return out
+	var seen := {}
+	var files := DirAccess.get_files_at(dir)
+	files.sort()
+	for f in files:
+		if f.get_extension().to_lower() not in [EXT, "json"]:
+			continue
+		var d := load_file(dir.path_join(f))
+		if d == null:
+			continue
+		var h := d.content_hash()
+		if seen.has(h):
+			continue
+		seen[h] = true
+		out.append({"path": dir.path_join(f), "data": d})
+	return out
+
+## 导出。返回 {"ok": bool, "path": String, "dup": bool}；文件夹里已经有一模一样的关卡就不再导出一份
+func export_file() -> Dictionary:
+	var dir := export_dir()
+	DirAccess.make_dir_recursive_absolute(dir)
+	var me := content_hash()
+	for it in list_exports():
+		if (it.data as LevelData).content_hash() == me:
+			return {"ok": true, "path": it.path, "dup": true}
+	var base := name.strip_edges()
+	for ch in ["/", "\\", ":", "*", "?", "\"", "<", ">", "|"]:
+		base = base.replace(ch, "_")
+	if base == "":
+		base = "关卡"
+	var path := dir.path_join("%s.%s" % [base, EXT])
+	var n := 2
+	while FileAccess.file_exists(path):
+		path = dir.path_join("%s (%d).%s" % [base, n, EXT])
+		n += 1
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return {"ok": false, "path": path, "dup": false}
+	f.store_string(JSON.stringify(to_dict()))
+	return {"ok": true, "path": path, "dup": false}
 
 static func slot_path(i: int) -> String:
 	return "%s/level_%d.json" % [DIR, i]

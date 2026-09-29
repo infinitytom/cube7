@@ -55,10 +55,18 @@ func _ready() -> void:
 	ed.cursor = Vector3i(40, LevelData.BASE_Y, 30)
 	await tap("jump")
 	check(L.data.object_at(Vector3i(30, LevelData.BASE_Y, 36)) >= 0 and L.data.object_at(Vector3i(40, LevelData.BASE_Y, 30)) >= 0, "放下金币和锈块兽（共 %d 个物件）" % L.data.objects.size())
-	# 分享码往返
-	var code := L.data.share_code()
-	var back := LevelData.from_share_code(code)
-	check(back != null and back.blocks.size() == L.data.blocks.size() and back.objects.size() == L.data.objects.size(), "分享码往返一致（%d 字符）" % code.length())
+	# 导出 / 导入往返，重复导出会被认出
+	var ex: Dictionary = L.data.export_file()
+	var back := LevelData.load_file(ex.path)
+	check(ex.ok and not ex.dup and back != null and back.content_hash() == L.data.content_hash(), "导出文件再导入一致（%s）" % str(ex.path).get_file())
+	var ex2: Dictionary = L.data.export_file()
+	check(ex2.dup and ex2.path == ex.path, "同样的关卡再导出一次 → 认出重复，不多生成文件")
+	check(LevelData.list_exports().any(func(it: Dictionary) -> bool: return it.path == ex.path), "导入列表里能看到这个文件")
+	DirAccess.remove_absolute(ex.path)
+	# 本地保存防重复
+	L.data.save_slot(3)
+	check(L.data.duplicate_slot(4) == 3, "本地保存：同内容会被认出")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(LevelData.slot_path(3)))
 	# 存档往返
 	L.data.save_slot(4)
 	var ld := LevelData.load_slot(4)
@@ -83,6 +91,12 @@ func _ready() -> void:
 	check(not ed.testing, "到达终点：试玩结束，回到编辑")
 	check(get_tree().get_nodes_in_group("enemy").is_empty(), "回到编辑后，试玩生成的敌人都清掉了")
 	check(W.data == blocks_before, "试玩里拆掉的方块全部还原")
+	ed._open_menu("main")
+	await wait(0.1)
+	ed._open_menu("import")
+	await wait(0.1)
+	check(ed._menu.visible and ed._menu_list.get_child_count() >= 4, "菜单：导入页能打开（%d 项）" % ed._menu_list.get_child_count())
+	ed._menu.visible = false
 	if fails.is_empty():
 		print("===== 全部通过 =====")
 	else:
