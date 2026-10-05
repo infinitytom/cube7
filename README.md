@@ -11,7 +11,7 @@
 
 ## 下载游玩（Windows）
 
-1. 到 [Releases](https://github.com/infinitytom/cube7/releases/latest) 下载最新的 `VoxelArk-windows-x64.zip`（v2.1）。
+1. 下载 [VoxelArk-windows-x64.zip](https://github.com/infinitytom/cube7/raw/downloads/VoxelArk-windows-x64.zip)（约 55 MB，v2.1）。
 2. 解压，双击 `VoxelArk.exe`。无需安装。
 3. 需要支持 Vulkan 或 Direct3D 12 的显卡（近几年的独显/核显都可以）。
 4. 已经玩过旧版也可以直接覆盖：存档兼容，旧存档里已通关的章节会视为已拿到芯片。
