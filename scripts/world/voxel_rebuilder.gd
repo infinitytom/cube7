@@ -8,6 +8,34 @@ extends MultiMeshInstance3D
 signal finished
 
 const MAX := 4000
+const SETTLE_TIME := 0.3
+
+## 圆角方块：飞回来的地形块也是软软的（和平滑地形的画风一致）
+static var _cube_mesh: ArrayMesh
+static func _rounded_cube() -> ArrayMesh:
+	if _cube_mesh:
+		return _cube_mesh
+	var bm := BoxMesh.new()
+	bm.size = Vector3.ONE
+	bm.subdivide_width = 3
+	bm.subdivide_height = 3
+	bm.subdivide_depth = 3
+	var arr := bm.get_mesh_arrays()
+	var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var ns := PackedVector3Array()
+	ns.resize(vs.size())
+	for i in vs.size():
+		var v := vs[i]
+		# 往球面收一点：棱角变圆，面还是平的
+		var sph := v.normalized() * 0.62
+		vs[i] = v.lerp(sph, 0.38)
+		ns[i] = v.normalized().lerp(arr[Mesh.ARRAY_NORMAL][i], 0.4).normalized()
+	arr[Mesh.ARRAY_VERTEX] = vs
+	arr[Mesh.ARRAY_NORMAL] = ns
+	arr[Mesh.ARRAY_TANGENT] = null
+	_cube_mesh = ArrayMesh.new()
+	_cube_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return _cube_mesh
 
 var world: VoxelWorld
 var _items: Array = []        ## 每项：{"vox": [[p, t], ...], "to": Vector3, "from": Vector3, "start": float, "dur": float, "col": Color, "size": float}
@@ -25,15 +53,14 @@ func _ready() -> void:
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.use_colors = true
-	var bm := BoxMesh.new()
-	bm.size = Vector3.ONE
+	var bm := _rounded_cube()
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.emission_enabled = true
 	m.emission = Color(0.35, 0.9, 1.0)
 	m.emission_energy_multiplier = 0.35
 	m.roughness = 0.6
-	bm.material = m
+	bm.surface_set_material(0, m)
 	_mm.mesh = bm
 	_mm.instance_count = MAX
 	_mm.visible_instance_count = 0
@@ -66,9 +93,24 @@ func _process(delta: float) -> void:
 			keep.append(it)
 			continue
 		if k >= 1.0:
+			if it.get("landed", false):
+				# 已经写回世界：在原位停留一小会儿、轻轻缩进去，盖住地形网格重建的那几帧（不会闪出空洞）
+				var lk := (_time - float(it.land_t)) / SETTLE_TIME
+				if lk < 1.0:
+					keep.append(it)
+					if n < MAX:
+						var ss: float = float(it.size) * (0.95 - 0.25 * lk)
+						_mm.set_instance_transform(n, Transform3D(Basis.from_scale(Vector3.ONE * ss), it.to))
+						_mm.set_instance_color(n, (it.col as Color).lerp(Color(0.75, 1.0, 1.0), 0.25 * (1.0 - lk)))
+						n += 1
+				continue
 			if not _land(it, p):
 				# PIX 正好挡在那一格：等一下再落
 				it.start = _time + 0.25 - float(it.dur)
+				keep.append(it)
+			else:
+				it["landed"] = true
+				it["land_t"] = _time
 				keep.append(it)
 			continue
 		keep.append(it)

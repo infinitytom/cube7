@@ -151,6 +151,37 @@ func add_seed(id: String) -> void:
 		get_tree().create_timer(5.0).timeout.connect(func() -> void:
 			say("这片浮岛上的噗噗全部救出来了！避难所那边……热闹得有点吵。"))
 
+# ---------------------------------------------------------------- 回声晶核（埋在地层里的星球记忆，进化的材料）
+signal echo_changed(found: int, total: int)
+var echo_found := 0          ## 本关找到的晶核
+var echo_total := 0          ## 本关埋了多少颗
+
+## 存档里记下的所有晶核 id（跨章节）；进化花掉的数量另记
+var _echo_mem: Array = []
+func echo_ids() -> Array:
+	if SaveGame.data.is_empty():
+		return _echo_mem
+	if not SaveGame.data.has("echo_cores"):
+		SaveGame.data["echo_cores"] = []
+	return SaveGame.data["echo_cores"]
+
+func has_echo(id: String) -> bool:
+	return id in echo_ids()
+
+func add_echo(id: String) -> void:
+	echo_found += 1
+	var ids := echo_ids()
+	if id != "" and not id in ids:
+		ids.append(id)
+		if not SaveGame.data.is_empty():
+			SaveGame.write()
+	echo_changed.emit(echo_found, echo_total)
+
+func set_echo_total(found: int, total: int) -> void:
+	echo_found = found
+	echo_total = total
+	echo_changed.emit(echo_found, echo_total)
+
 func add_fragment(log_text: String) -> void:
 	fragments += 1
 	fragment_logs.append(log_text)
@@ -279,9 +310,9 @@ func _input(event: InputEvent) -> void:
 		device_changed.emit(device)
 
 const GLYPHS := {
-	"ps": {"jump": "✕", "ability": "□", "grab": "○", "view_toggle": "△", "boost": "R2", "form": "L1/R1", "form_direct": "十字键 ←↑→", "respawn": "Create", "pause": "Options", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "✕", "ui_cancel": "○"},
-	"xbox": {"jump": "A", "ability": "X", "grab": "B", "view_toggle": "Y", "boost": "RT", "form": "LB/RB", "form_direct": "十字键 ←↑→", "respawn": "View", "pause": "Menu", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "A", "ui_cancel": "B"},
-	"kbm": {"jump": "空格", "ability": "左键", "grab": "E", "view_toggle": "V", "boost": "Shift", "form": "滚轮", "form_direct": "1-3", "respawn": "R", "pause": "Esc", "move": "WASD", "camera": "鼠标", "ui_accept": "Enter", "ui_cancel": "Esc"},
+	"ps": {"jump": "✕", "ability": "□", "grab": "○", "view_toggle": "△", "boost": "R2", "form": "L1/R1", "form_direct": "十字键 ←↑→", "respawn": "Create", "scan": "L2", "pause": "Options", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "✕", "ui_cancel": "○"},
+	"xbox": {"jump": "A", "ability": "X", "grab": "B", "view_toggle": "Y", "boost": "RT", "form": "LB/RB", "form_direct": "十字键 ←↑→", "respawn": "View", "scan": "LT", "pause": "Menu", "move": "左摇杆", "camera": "右摇杆", "ui_accept": "A", "ui_cancel": "B"},
+	"kbm": {"jump": "空格", "ability": "左键", "grab": "E", "view_toggle": "V", "boost": "Shift", "form": "滚轮", "form_direct": "1-3", "respawn": "R", "scan": "Q", "pause": "Esc", "move": "WASD", "camera": "鼠标", "ui_accept": "Enter", "ui_cancel": "Esc"},
 }
 
 func glyph(action: String) -> String:

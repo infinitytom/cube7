@@ -903,7 +903,7 @@ func _process(delta: float) -> void:
 					if boss.global_position.distance_to(pp) < 2.0:
 						continue
 					world.set_block(c, Blocks.REINFORCED)
-					world._spawn_debris(pp, Blocks.colors[Blocks.REINFORCED])
+					world._spawn_debris(pp, Blocks.REINFORCED)
 					Sfx.play("clang", pp, -14.0, 0.1, 1.3)
 					break
 	# 荆棘烧开以后记一下（读档不用再烧一遍）

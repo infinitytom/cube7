@@ -1,6 +1,7 @@
 shader_type spatial;
 render_mode cull_back;
 #include "res://shaders/voxel_common.gdshaderinc"
+#include "res://shaders/toon_light.gdshaderinc"
 
 void fragment() {
 	if (occluder_cut(v_wpos, CAMERA_POSITION_WORLD, FRAGCOORD.xy)) discard;

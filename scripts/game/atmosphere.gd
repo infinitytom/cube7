@@ -130,8 +130,14 @@ static func apply(node: Node, name: String, keep_sun_yaw := false) -> Dictionary
 		env.glow_intensity = 0.75
 		env.glow_bloom = 0.06
 		env.glow_hdr_threshold = 1.1
+		# 柔和的环境光遮蔽：平滑地形的坑底、缝里自然变暗（奥德赛那种“软”的体积感）
+		env.ssao_enabled = bool(Settings.get_v("ssao"))
+		env.ssao_radius = 1.2
+		env.ssao_intensity = 1.6
+		env.ssao_power = 1.3
+		env.ssao_light_affect = 0.15
 		env.adjustment_enabled = true
-		env.adjustment_saturation = 1.08
+		env.adjustment_saturation = 1.12
 		env.adjustment_contrast = 1.03
 		we.environment = env
 	var sun := root.get_node_or_null("Sun") as DirectionalLight3D

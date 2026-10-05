@@ -6,6 +6,8 @@
 //   露边掩码 bit0 = -u 边，bit1 = +u，bit2 = -v，bit3 = +v —— 只有“露在外面”的边才做圆角，平地上看不到方格
 //   类别：0 打不坏 / 1 撞得碎 / 2 只能钻 / 3 松软
 
+#include "res://shaders/voxel_util.gdshaderinc"
+
 varying vec3 v_wpos;
 varying vec3 v_wnorm;
 varying float v_type;
@@ -15,22 +17,6 @@ uniform vec3 dirt_color : source_color = vec3(0.925, 0.604, 0.455);
 uniform float bevel_width = 0.16;
 uniform float bevel_dark = 0.16;
 uniform float round_strength = 0.9;
-
-float hash13(vec3 p) {
-	p = fract(p * 0.1031);
-	p += dot(p, p.zyx + 31.32);
-	return fract((p.x + p.y) * p.z);
-}
-
-// 平滑的值噪声（大尺度的颜色起伏，代替逐格的颗粒）
-float vnoise(vec3 p) {
-	vec3 i = floor(p);
-	vec3 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	float a = mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y);
-	float b = mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y);
-	return mix(a, b, f.z);
-}
 
 void vertex() {
 	v_wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -113,7 +99,13 @@ vec3 voxel_albedo(vec3 base, float light, vec2 uv) {
 	//   打不坏：更暗一点、边缘更硬朗
 	float ei = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
 	bool foliage = abs(v_type - 22.0) < 0.5 || v_type > 33.5 && v_type < 35.5 || abs(v_type - 43.0) < 0.5;
-	if (foliage) {
+	bool bark = abs(v_type - 21.0) < 0.5;
+	if (bark) {
+		// 树干：竖向的树皮纹理，不画箱板（不然像一摞砖）
+		float st = vnoise(vec3(v_wpos.x * 7.0, v_wpos.y * 1.2, v_wpos.z * 7.0));
+		col *= 0.86 + 0.22 * st;
+		col *= 0.95 + 0.05 * sin((v_wpos.x + v_wpos.z) * 20.0 + st * 4.0);
+	} else if (foliage) {
 		// 树叶：一簇一簇的明暗，不画箱板
 		col *= 0.82 + 0.3 * vnoise(v_wpos * 3.3) + 0.08 * n3;
 		col = mix(col, col * vec3(1.15, 1.2, 0.8), smoothstep(0.3, 0.9, v_wnorm.y) * 0.35);
@@ -128,9 +120,7 @@ vec3 voxel_albedo(vec3 base, float light, vec2 uv) {
 		bool is_glass = abs(v_type - 5.0) < 0.5;
 		if (!is_glass) {
 			col *= 0.93 + 0.07 * step(0.5, fract(cuv.y * 3.0));
-			col = mix(col, col * 1.35 + vec3(0.04), frame * 0.7);
-			float bolt = 1.0 - smoothstep(0.025, 0.04, length(abs(cuv - 0.5) - vec2(0.39)));
-			col = mix(col, vec3(0.82, 0.84, 0.88), bolt);
+			col = mix(col, col * 1.25 + vec3(0.03), frame * 0.55);
 		} else {
 			col = mix(col, vec3(1.0), frame * 0.35);
 		}
@@ -163,26 +153,3 @@ vec3 voxel_round_normal(vec2 uv) {
 	return normalize(n + bend * round_strength);
 }
 
-// 挡在镜头和 PIX 之间的方块：做成网点镂空，能透过去看到 PIX（树冠、墙角不再糊住画面）
-global uniform vec4 occl_target;   // xyz = PIX 位置，w = 1 启用
-float bayer4(vec2 p) {
-	ivec2 q = ivec2(mod(p, 4.0));
-	int i = q.x + q.y * 4;
-	int m[16] = int[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
-	return (float(m[i]) + 0.5) / 16.0;
-}
-bool occluder_cut(vec3 wpos, vec3 cam, vec2 fragcoord) {
-	if (occl_target.w < 0.5) return false;
-	vec3 seg = occl_target.xyz - cam;
-	float L = length(seg);
-	if (L < 1.0) return false;
-	vec3 dir = seg / L;
-	float t = dot(wpos - cam, dir);
-	if (t < 0.05 || t > L - 0.9) return false;
-	float r = length(wpos - cam - dir * t);
-	float rad = mix(0.7, 1.5, clamp(t / L * 1.6, 0.0, 1.0));
-	if (r > rad) return false;
-	float k = 1.0 - r / rad;                      // 越靠近视线越透
-	k *= smoothstep(L - 0.9, L - 2.0, t);         // PIX 脚边的方块不镂空
-	return bayer4(fragcoord) < k * 0.85;
-}

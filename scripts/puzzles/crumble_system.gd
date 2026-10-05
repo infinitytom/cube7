@@ -40,10 +40,10 @@ func _physics_process(delta: float) -> void:
 			_gone.erase(c)
 			if world.get_block(c) == Blocks.AIR:
 				world.set_block(c, Blocks.CRUMBLE)
-				world._spawn_debris(pp, Blocks.colors[Blocks.CRUMBLE])
+				world._spawn_debris(pp, Blocks.CRUMBLE)
 
 func _shake(c: Vector3i) -> void:
-	world._spawn_debris(world.voxel_center(c) + Vector3.UP * 0.2, Blocks.colors[Blocks.CRUMBLE])
+	world._spawn_debris(world.voxel_center(c) + Vector3.UP * 0.2, Blocks.CRUMBLE)
 	Sfx.play("break_soft", world.voxel_center(c), -10.0, 0.2, 0.8)
 
 func _drop(c: Vector3i) -> void:

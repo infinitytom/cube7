@@ -46,6 +46,7 @@ func _init() -> void:
 		"form_2": [_key(KEY_2), _joy(JOY_BUTTON_DPAD_UP)],
 		"form_3": [_key(KEY_3), _joy(JOY_BUTTON_DPAD_RIGHT)],
 		"view_toggle": [_key(KEY_V), _joy(JOY_BUTTON_Y)],
+		"scan": [_key(KEY_Q), _mouse(MOUSE_BUTTON_MIDDLE), _axis(JOY_AXIS_TRIGGER_LEFT, 1.0)],
 		"respawn": [_key(KEY_R), _joy(JOY_BUTTON_BACK)],
 		"pause": [_key(KEY_ESCAPE), _joy(JOY_BUTTON_START)],
 	}

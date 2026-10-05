@@ -113,6 +113,7 @@ func build_arrays(skip_bottom := false) -> Dictionary:
 	var v1 := PackedVector3Array(); var n1 := PackedVector3Array(); var c1 := PackedColorArray(); var t1 := PackedVector2Array(); var w1 := PackedVector2Array(); var i1 := PackedInt32Array()
 	var v2 := PackedVector3Array(); var n2 := PackedVector3Array(); var c2 := PackedColorArray(); var t2 := PackedVector2Array(); var w2 := PackedVector2Array(); var i2 := PackedInt32Array()
 	var v3 := PackedVector3Array(); var n3 := PackedVector3Array(); var c3 := PackedColorArray(); var t3 := PackedVector2Array(); var w3 := PackedVector2Array(); var i3 := PackedInt32Array()
+	var has_smooth := false
 	# 内部三层循环用平铺下标；边界体素单独判断越界
 	for z in dims.z:
 		for y in dims.y:
@@ -121,6 +122,9 @@ func build_arrays(skip_bottom := false) -> Dictionary:
 				var i := row + x
 				var t: int = data[i]
 				if t == 0:
+					continue
+				if Blocks.smooth[t] == 1:
+					has_smooth = true
 					continue
 				var border := x == 0 or y == 0 or z == 0 or x == sx - 1 or y == dims.y - 1 or z == dims.z - 1
 				var r: int = rnd[t]
@@ -216,7 +220,16 @@ func build_arrays(skip_bottom := false) -> Dictionary:
 		sets[Blocks.Render.GLASS] = [v2, n2, c2, t2, w2, i2]
 	if not v3.is_empty():
 		sets[Blocks.Render.GLOW] = [v3, n3, c3, t3, w3, i3]
+	if has_smooth:
+		var sm := _smooth_arrays(occ, lin, cat)
+		if not sm.is_empty():
+			sm["vsize"] = vsize
+			sets[VoxelWorld.SMOOTH_SET] = sm
 	return sets
+
+## 自然材质的平滑曲面（和玩法世界同一套：Voxel Tools / Surface Nets），远景的岛不再是一摞方块
+func _smooth_arrays(_occ: PackedByteArray, _lin: PackedColorArray, _cat: PackedByteArray) -> Dictionary:
+	return TerrainMesher.build_grid(data, dims)
 
 static var _mats := {}
 
@@ -232,6 +245,10 @@ static func material(render: int) -> Material:
 static func arrays_to_mesh(sets: Dictionary) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	for r in sets.keys():
+		if r == VoxelWorld.SMOOTH_SET:
+			# 体素中心坐标 → 本地坐标：下标 (0,0,0) 的中心在 (0.5, 0.5, 0.5) × vsize
+			TerrainMesher.grid_surface(mesh, sets[r], sets[r].get("vsize", 1.0), Vector3.ONE * 0.5 * float(sets[r].get("vsize", 1.0)))
+			continue
 		var st: Array = sets[r]
 		if (st[0] as PackedVector3Array).is_empty():
 			continue
@@ -242,7 +259,8 @@ static func arrays_to_mesh(sets: Dictionary) -> ArrayMesh:
 		arr[Mesh.ARRAY_COLOR] = st[2]
 		arr[Mesh.ARRAY_TEX_UV] = st[3]
 		arr[Mesh.ARRAY_TEX_UV2] = st[4]
-		arr[Mesh.ARRAY_INDEX] = st[5]
+		if not (st[5] as PackedInt32Array).is_empty():
+			arr[Mesh.ARRAY_INDEX] = st[5]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, material(r))
 	return mesh

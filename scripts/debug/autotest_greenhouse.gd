@@ -121,6 +121,10 @@ func _run() -> void:
 
 	# 3. 撞塌砂塔底座 → 砂子填沟
 	await tp(Vector3i(46, G, 71), Vector3(6, 0, 0))
+	if OS.has_environment("CUBE7_DBG"):
+		for k in 10:
+			await wait(0.1)
+			print("   sandtower P=", vx(P.global_position), " ", P.global_position, " v=", P.linear_velocity, " post=", W.get_block(Vector3i(51, G, 70)))
 	await go(Vector2(0, -1), 1.0)
 	await wait(8.0)
 	var sand := count(Vector3i(52, G - 4, 55), Vector3i(61, G - 1, 86), Blocks.SAND)

@@ -37,7 +37,7 @@ func _ready() -> void:
 	# 换方块
 	var s0: int = ed.sel[0]
 	await tap("form_next")
-	check(ed.sel[0] == s0 + 1, "R1 换下一种方块（%s）" % LevelData.BLOCKS[ed.sel[0]][1])
+	check(ed.sel[0] == s0 + 1 and ed.slot == 1, "R1 换到下一个快捷格（%s）" % LevelData.BLOCKS[ed.sel[0]][1])
 	# 移动光标
 	var cx := ed.cursor
 	Input.action_press("move_right")
@@ -91,6 +91,47 @@ func _ready() -> void:
 	check(not ed.testing, "到达终点：试玩结束，回到编辑")
 	check(get_tree().get_nodes_in_group("enemy").is_empty(), "回到编辑后，试玩生成的敌人都清掉了")
 	check(W.data == blocks_before, "试玩里拆掉的方块全部还原")
+	# ---- 马造式快速编辑
+	ed._select_slot(0)
+	ed.cursor = Vector3i(20, LevelData.BASE_Y, 20)
+	var n0 := L.data.blocks.size()
+	ed._fill_rect(Vector3i(20, LevelData.BASE_Y, 20), Vector3i(24, LevelData.BASE_Y, 23), false)
+	check(L.data.blocks.size() == n0 + 20 and W.get_block(Vector3i(22, LevelData.BASE_Y, 22)) != Blocks.AIR, "框选铺满 5×4 = 20 格")
+	ed._undo_step()
+	check(L.data.blocks.size() == n0 and W.get_block(Vector3i(22, LevelData.BASE_Y, 22)) == Blocks.AIR, "撤销：20 格一次撤掉")
+	ed._redo_step()
+	check(L.data.blocks.size() == n0 + 20, "重做：又铺回来")
+	ed._undo_step()
+	var no := L.data.objects.size()
+	ed._select_slot(6)   # 金币
+	ed.cursor = Vector3i(26, LevelData.BASE_Y, 26)
+	await tap("jump")
+	check(L.data.objects.size() == no + 1, "快捷格 7：放下金币")
+	ed._undo_step()
+	check(L.data.objects.size() == no, "撤销放物件")
+	# 吸管：光标放在草地上 → 当前快捷格变成草地
+	ed._select_slot(4)
+	ed.cursor = Vector3i(30, LevelData.BASE_Y, 30)
+	ed._eyedrop()
+	check(ed.cat == 0 and LevelData.BLOCKS[ed.sel[0]][0] == W.get_block(Vector3i(30, LevelData.BASE_Y - 1, 30)), "吸管吸到脚下的方块（%s）" % LevelData.BLOCKS[ed.sel[0]][1])
+	# 全部物块面板：打开、选一个放进快捷格
+	ed._open_picker()
+	await wait(0.1)
+	var btns := ed._picker.find_children("*", "Button", true, false)
+	check(ed._picker.visible and btns.size() >= LevelData.BLOCKS.size() + LevelData.OBJECTS.size(), "全部物块面板：%d 个物块都有图标按钮" % btns.size())
+	(btns[3] as Button).pressed.emit()
+	await wait(0.1)
+	var it: Array = btns[3].get_meta("item")
+	check(not ed._picker.visible and ed.hotbar[ed.slot] == it, "在面板里选中的物块放进了当前快捷格")
+	check(BlockIcon.describe(0, 0).contains("撞碎") or BlockIcon.describe(0, 0).contains("钻"), "物块说明：%s" % BlockIcon.describe(0, 0))
+	# 从光标处试玩
+	ed.cursor = Vector3i(44, LevelData.BASE_Y, 44)
+	ed._start_test(true)
+	await wait(1.5)
+	var pc := W.world_to_voxel(P.global_position)
+	check(ed.testing and absi(pc.x - 44) <= 1 and absi(pc.z - 44) <= 1, "从光标处试玩：PIX 出现在光标位置（%s）" % pc)
+	ed._stop_test()
+	await wait(1.0)
 	ed._open_menu("main")
 	await wait(0.1)
 	ed._open_menu("import")

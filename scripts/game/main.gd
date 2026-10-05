@@ -38,9 +38,23 @@ func _ready() -> void:
 	level.set("world_path", NodePath("../VoxelWorld"))
 	add_child(level)
 	level.call("build")
+	# 地层深处的回声晶核（章节关卡才有；测试房间和编辑器关卡没有）
+	var echo_ch := ""
+	if not editor_mode and not use_test and ch >= 1 and ch <= Chapters.count():
+		echo_ch = Chapters.LIST[ch - 1].id
+		EchoCaches.place(level, world, echo_ch)
+		LevelSpice.apply(level, world, echo_ch)
+	else:
+		GameState.set_echo_total(0, 0)
 	if level.has_method("settle_enemies"):
 		level.call("settle_enemies")
 	world.track_damage = true
+	var scan := EchoScan.new()
+	scan.name = "EchoScan"
+	scan.world = world
+	add_child(scan)
+	if echo_ch != "" and not args.has("--autotest") and not args.any(func(a: String) -> bool: return a.begins_with("--autotest=")):
+		scan.tutorial_later()
 	player.world = world
 	player.apply_form(MorphBall.BALL, false)
 	player.respawn_at(level.call("spawn_position"), -1, false)

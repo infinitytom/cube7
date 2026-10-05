@@ -24,12 +24,12 @@ func _on_player_entered() -> void:
 	if _active or _done:
 		return
 	_active = true
-	_left = time_limit
+	_left = time_limit * 1.4    # 节奏放慢：限时挑战多给 40% 时间
 	_got = 0
 	Sfx.play("unlock", Vector3.INF, -4.0, 0.0)
 	var tw := create_tween()
 	tw.tween_property(_button, "scale:y", _button.scale.y * 0.4, 0.1)
-	GameState.say("限时挑战！%d 秒内收集全部 %d 枚蓝色金币！" % [int(time_limit), coin_positions.size()])
+	GameState.say("限时挑战！%d 秒内收集全部 %d 枚蓝色金币！" % [int(time_limit * 1.4), coin_positions.size()])
 	for p in coin_positions:
 		var c := _make_coin()
 		get_parent().add_child(c)

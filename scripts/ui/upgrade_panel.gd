@@ -4,6 +4,9 @@ extends PanelContainer
 
 signal closed
 
+## true：进化面板（花回声晶核，解锁新能力）；false：改装面板（花金币）
+var evolve := false
+
 var _rows: Array[Control] = []
 var _coins: Label
 var _list: VBoxContainer
@@ -17,25 +20,27 @@ func _ready() -> void:
 	v.add_theme_constant_override("separation", 8)
 	add_child(v)
 	var head := HBoxContainer.new()
-	head.add_child(UIKit.label("改装 PIX", 34, UIKit.TEXT, true))
+	head.add_child(UIKit.label("形态进化" if evolve else "改装 PIX", 34, UIKit.TEXT, true))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(sp)
-	head.add_child(UIIcon.make("coin", UIKit.ACCENT2, 28))
+	head.add_child(UIIcon.make("core" if evolve else "coin", Color("8ff7ff") if evolve else UIKit.ACCENT2, 28))
 	_coins = UIKit.label("0", 28, Color.WHITE, true)
 	head.add_child(_coins)
 	v.add_child(head)
-	v.add_child(UIKit.label("金币可以在这里换成永久的升级，跨章节保留。", 17, UIKit.DIM))
+	var sub := UIKit.label("埋在地层深处的回声晶核，能让 PIX 进化出新的能力——能挖开、听见、撞开原本到不了的地方。" if evolve else "金币可以在这里换成永久的升级，跨章节保留。", 17, UIKit.DIM)
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(sub)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)
 	v.add_child(_list)
-	for u in Upgrades.LIST:
+	for u in (Evolutions.LIST if evolve else Upgrades.LIST):
 		var r := _make_row(u)
 		_list.add_child(r)
 		_rows.append(r)
 	var hint := HBoxContainer.new()
 	hint.add_theme_constant_override("separation", 18)
-	hint.add_child(UIKit.prompt("ui_accept", "购买", 16))
+	hint.add_child(UIKit.prompt("ui_accept", "进化" if evolve else "购买", 16))
 	hint.add_child(UIKit.prompt("ui_cancel", "返回", 16))
 	v.add_child(hint)
 	for i in _rows.size():
@@ -70,7 +75,7 @@ func _make_row(u: Dictionary) -> PanelContainer:
 	tv.add_theme_constant_override("separation", 0)
 	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(tv)
-	tv.add_child(UIKit.label(u.name, 22, UIKit.TEXT, true))
+	tv.add_child(UIKit.label(("【%s】" % u.form if u.has("form") else "") + u.name, 22, UIKit.TEXT, true))
 	tv.add_child(UIKit.label(u.desc, 15, UIKit.DIM))
 	var pips := HBoxContainer.new()
 	pips.name = "Pips"
@@ -92,7 +97,7 @@ func _make_row(u: Dictionary) -> PanelContainer:
 
 func _buy(pc: Control) -> void:
 	var id: String = pc.get_meta("id")
-	if Upgrades.buy(id):
+	if (Evolutions.unlock(id) if evolve else Upgrades.buy(id)):
 		Sfx.play("success", Vector3.INF, -4.0, 0.0)
 		GameState.rumble(0.5, 0.4, 0.15)
 		var tw := pc.create_tween()
@@ -109,27 +114,34 @@ func _buy(pc: Control) -> void:
 	_refresh()
 
 func _refresh() -> void:
-	_coins.text = str(GameState.coins)
+	_coins.text = str(Evolutions.cores_available() if evolve else GameState.coins)
 	for pc in _rows:
 		var id: String = pc.get_meta("id")
 		var pips := pc.find_child("Pips", true, false) as HBoxContainer
 		for c in pips.get_children():
 			c.queue_free()
-		for k in Upgrades.max_level(id):
+		var maxl := 1 if evolve else Upgrades.max_level(id)
+		var lvl := (1 if Evolutions.has(id) else 0) if evolve else Upgrades.level(id)
+		for k in maxl:
 			var d := ColorRect.new()
 			d.custom_minimum_size = Vector2(16, 16)
 			d.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			d.color = UIKit.GOOD if k < Upgrades.level(id) else Color(1, 1, 1, 0.15)
+			d.color = UIKit.GOOD if k < lvl else Color(1, 1, 1, 0.15)
 			d.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			pips.add_child(d)
 		var cost := pc.find_child("Cost", true, false) as Label
-		var c := Upgrades.next_cost(id)
+		var c := -1
+		if evolve:
+			c = -1 if Evolutions.has(id) else int(Evolutions.info(id).cost)
+		else:
+			c = Upgrades.next_cost(id)
+		var have := Evolutions.cores_available() if evolve else GameState.coins
 		if c < 0:
-			cost.text = "已满级"
+			cost.text = "已进化" if evolve else "已满级"
 			cost.add_theme_color_override("font_color", UIKit.GOOD)
 		else:
-			cost.text = "◉ %d" % c
-			cost.add_theme_color_override("font_color", UIKit.ACCENT2 if GameState.coins >= c else Color(1, 0.5, 0.45))
+			cost.text = ("◆ %d" if evolve else "◉ %d") % c
+			cost.add_theme_color_override("font_color", (Color("8ff7ff") if evolve else UIKit.ACCENT2) if have >= c else Color(1, 0.5, 0.45))
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_visible_in_tree() and event.is_action_pressed("ui_cancel"):

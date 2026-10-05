@@ -99,7 +99,8 @@ func _process(delta: float) -> void:
 	yaw -= s.x * stick_speed.x * delta * _sens()
 	pitch = clampf(pitch - s.y * stick_speed.y * delta * _sens() * _inv(), -1.3, 0.35)
 	if _target:
-		_pivot = _pivot.lerp(_target_pos(), 1.0 - exp(-14.0 * delta))
+		# 跟随稍微放松一点：节奏放慢后，镜头也更从容
+		_pivot = _pivot.lerp(_target_pos(), 1.0 - exp(-10.0 * delta))
 
 	var want := model_distance if model_view else distance * float(Settings.get_v("cam_dist"))
 	var base_pitch := -0.95 if model_view else pitch

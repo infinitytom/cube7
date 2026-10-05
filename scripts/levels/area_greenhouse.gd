@@ -328,7 +328,8 @@ func _sand_pit() -> void:
 	# 砂塔：6×6×10，立在一层木箱底座上
 	# 砂塔一半悬在沟的上方，由一层支撑木架托着；路边那根橙色支撑桩连着木架
 	world.fill_box(Vector3i(PIT_X.x, G - 1, 63), Vector3i(PIT_X.y, G - 1, 70), Blocks.SUPPORT)
-	world.fill_box(Vector3i(51, G - 1, 70), Vector3i(51, G + 1, 70), Blocks.SUPPORT)
+	# 支撑桩两格宽（平滑地形上滚动轨迹会有点弧度，太细的桩容易擦边而过）
+	world.fill_box(Vector3i(51, G - 1, 70), Vector3i(51, G + 1, 71), Blocks.SUPPORT)
 	world.fill_box(Vector3i(PIT_X.x, G, 63), Vector3i(PIT_X.y, G + 11, 69), Blocks.SAND)
 	# 沟上方横着一根打不坏的旧灌溉管：想直接跳过去会撞上管子掉进沟里——得先把沟填平再滚过去
 	var zs: Array[int] = []

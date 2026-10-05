@@ -86,6 +86,21 @@ func _draw() -> void:
 		"form_bubble":
 			draw_arc(c, r * 0.85, 0, TAU, 32, color, 2.0, true)
 			draw_circle(c + Vector2(-r * 0.3, -r * 0.3), r * 0.18, Color(1, 1, 1, 0.8))
+		"core":
+			# 回声晶核：六边形宝石 + 一圈回声
+			var hx := PackedVector2Array()
+			for k in 6:
+				var a := k * PI / 3.0
+				hx.append(c + Vector2(cos(a), sin(a)) * r * 0.62)
+			draw_colored_polygon(hx, color)
+			draw_line(c + Vector2(-r * 0.31, -r * 0.54), c + Vector2(r * 0.31, r * 0.54), color.lightened(0.5), 1.5)
+			draw_arc(c, r * 0.95, -0.6, 0.6, 8, Color(color, 0.7), 1.5, true)
+			draw_arc(c, r * 0.95, PI - 0.6, PI + 0.6, 8, Color(color, 0.7), 1.5, true)
+		"echo":
+			draw_circle(c, r * 0.18, color)
+			for k in 3:
+				draw_arc(c, r * (0.4 + k * 0.28), -0.7, 0.7, 10, Color(color, 1.0 - k * 0.28), 2.0, true)
+				draw_arc(c, r * (0.4 + k * 0.28), PI - 0.7, PI + 0.7, 10, Color(color, 1.0 - k * 0.28), 2.0, true)
 		"save":
 			for k in 8:
 				var a := t * 6.0 + k * TAU / 8.0

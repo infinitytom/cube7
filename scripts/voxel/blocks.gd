@@ -23,11 +23,11 @@ enum Render { NONE, OPAQUE, GLASS, GLOW }
 ## item：破坏后留在场上的“可用物件”（只有它会保留）
 const DEFS := {
 	BEDROCK: {"name": "外星合金", "color": Color("4a4f63"), "render": Render.OPAQUE},
-	GRASS: {"name": "草地", "color": Color("6cae4f"), "drill": true, "burn": 0.8, "burn_to": DIRT, "catch": 0.08, "impact": 10.5},
-	DIRT: {"name": "泥土", "color": Color("8b5e3c"), "drill": true, "impact": 10.5},
+	GRASS: {"name": "草地", "color": Color("7cbd4a"), "drill": true, "burn": 0.8, "burn_to": DIRT, "catch": 0.08, "impact": 10.5},
+	DIRT: {"name": "泥土", "color": Color("a86a42"), "drill": true, "impact": 10.5},
 	SAND: {"name": "砂", "color": Color("e2c58f"), "impact": 2.5, "drill": true, "falls": true, "soft": true},
 	GLASS: {"name": "玻璃", "color": Color("b9e3f5"), "impact": 7.5, "drill": true, "render": Render.GLASS},
-	ROCK: {"name": "岩石", "color": Color("8a8f98"), "drill": true},
+	ROCK: {"name": "岩石", "color": Color("9aa0aa"), "drill": true},
 	ORE: {"name": "金矿", "color": Color("e0ad3a"), "drill": true, "coins": 5, "impact": 10.5},
 	METAL: {"name": "金属", "color": Color("a9b2bd"), "conductive": true},
 	CRYSTAL: {"name": "能量水晶", "color": Color("6fe3ff"), "render": Render.GLOW, "conductive": true},
@@ -42,19 +42,19 @@ const DEFS := {
 	TRACK: {"name": "平衡轨道", "color": Color("c98a5e")},
 	GOAL: {"name": "终点信标", "color": Color("ffd84d"), "render": Render.GLOW},
 	PLATE: {"name": "压力板", "color": Color("e38b3a")},
-	WOOD: {"name": "木头", "color": Color("7a4f31"), "drill": true, "burn": 5.0, "catch": 0.5, "impact": 11.0},
-	LEAVES: {"name": "树叶", "color": Color("4d9444"), "impact": 1.5, "drill": true, "burn": 1.2},
+	WOOD: {"name": "木头", "color": Color("9c6a45"), "drill": true, "burn": 5.0, "catch": 0.5, "impact": 11.0},
+	LEAVES: {"name": "树叶", "color": Color("5aa548"), "impact": 1.5, "drill": true, "burn": 1.2},
 	GEODE: {"name": "晶洞", "color": Color("8a63d2"), "drill": true, "item": "crystal", "energy": 2, "impact": 10.5},
 	HULL: {"name": "飞船外壳", "color": Color("e9edf2")},
-	CLIFF: {"name": "悬崖岩", "color": Color("b3896a")},
+	CLIFF: {"name": "悬崖岩", "color": Color("b9875a")},
 	PAVING: {"name": "铺路石", "color": Color("cfc6b4"), "impact": 13.0},
 	MOSS: {"name": "苔石", "color": Color("6f8f4c"), "impact": 10.5},
 	LAMP: {"name": "灯", "color": Color("fff0b0"), "render": Render.GLOW},
 	HULL_DARK: {"name": "飞船舱体", "color": Color("3d4659")},
-	LOOSE: {"name": "松土", "color": Color("9a6a48"), "drill": true, "soft": true, "impact": 8.0},
-	CLIFF_B: {"name": "悬崖岩（深层）", "color": Color("96735a")},
+	LOOSE: {"name": "松土", "color": Color("b5835c"), "drill": true, "soft": true, "impact": 8.0},
+	CLIFF_B: {"name": "悬崖岩（深层）", "color": Color("9b6c4a")},
 	CLIFF_C: {"name": "悬崖岩（灰层）", "color": Color("7f6f64")},
-	PINE: {"name": "松针", "color": Color("2f6e45"), "impact": 1.5, "drill": true, "burn": 1.2},
+	PINE: {"name": "松针", "color": Color("3d8550"), "impact": 1.5, "drill": true, "burn": 1.2},
 	BLOSSOM: {"name": "花冠", "color": Color("f0a7bd"), "impact": 1.5, "drill": true, "burn": 1.2},
 	FIRE: {"name": "燃烧中", "color": Color("ff8a3d"), "render": Render.GLOW, "impact": 2.0, "drill": true},
 	EMBER: {"name": "炭火", "color": Color("ff5a2a"), "render": Render.GLOW, "ignites": true},
@@ -77,7 +77,14 @@ const DEFS := {
 	SUPPORT: {"name": "支撑木架", "color": Color("c8904f"), "impact": 2.0, "drill": true, "chain": true, "coins": 1, "burn": 2.5},
 }
 
+## 走平滑网格（Surface Nets）的自然材质：地形、树冠、树干。人造物（箱子、金属、木板、建筑）保留圆角方块。
+## 和 TerrainPalette.SLOTS / ALIAS 一一对应（Voxel Tools 的 Transvoxel 最多 16 种材质）
+const SMOOTH := [GRASS, DIRT, SAND, ROCK, ORE, LEAVES, GEODE, CLIFF, CLIFF_B, CLIFF_C, MOSS, LOOSE,
+	PINE, BLOSSOM, DARKROCK, DARKROCK_B, RUSTDUNE, RUSTROCK]
+
 static var colors := PackedColorArray()
+static var smooth := PackedByteArray()
+const GROUND := [GRASS, DIRT, SAND, ROCK, ORE, GEODE, CLIFF, CLIFF_B, CLIFF_C, MOSS, LOOSE, DARKROCK, DARKROCK_B, RUSTDUNE, RUSTROCK]
 static var render := PackedByteArray()
 static var impact := PackedFloat32Array()
 static var drill := PackedByteArray()
@@ -105,6 +112,15 @@ static func _static_init() -> void:
 	ignites.resize(COUNT)
 	explodes.resize(COUNT)
 	catch_fire.resize(COUNT)
+	smooth.resize(256)
+	for t in SMOOTH:
+		smooth[t] = 1
+	SmoothMesher.smooth_table = smooth
+	var gb := PackedByteArray()
+	gb.resize(256)
+	for t in GROUND:
+		gb[t] = 1
+	SmoothMesher.blend_table = gb
 	for t in COUNT:
 		var d: Dictionary = DEFS.get(t, {})
 		colors[t] = d.get("color", Color.MAGENTA)
@@ -121,6 +137,29 @@ static func _static_init() -> void:
 		explodes[t] = 1 if d.get("explodes", false) else 0
 		catch_fire[t] = float(d.get("catch", 1.0))
 
+## 碎裂方式（决定破坏形状和碎片的样子）
+enum Frag { ROCK, EARTH, WOOD, GLASS, LEAF, METAL, CRYSTAL }
+static var _frag := PackedByteArray()
+
+static func frag_kind(t: int) -> int:
+	if _frag.is_empty():
+		_frag.resize(256)
+		for i in 256:
+			_frag[i] = Frag.ROCK
+		for i in [GRASS, DIRT, SAND, LOOSE, MOSS, RUSTDUNE, ORE]:
+			_frag[i] = Frag.EARTH
+		for i in [WOOD, CRATE, CRATE_ITEM, SCAFFOLD, PLANK, SUPPORT, BRAMBLE, BARREL]:
+			_frag[i] = Frag.WOOD
+		for i in [GLASS, LENS]:
+			_frag[i] = Frag.GLASS
+		for i in [LEAVES, PINE, BLOSSOM, GLOWSHROOM]:
+			_frag[i] = Frag.LEAF
+		for i in [METAL, RUST, COPPER, HULL, HULL_DARK, BEDROCK, TILE, TRACK, PLATE]:
+			_frag[i] = Frag.METAL
+		for i in [CRYSTAL, GEODE, GEM_CHAIN, SOURCE, RECEIVER, RECEIVER_ON]:
+			_frag[i] = Frag.CRYSTAL
+	return _frag[t]
+
 static func def(t: int) -> Dictionary:
 	return DEFS.get(t, {})
 
@@ -129,7 +168,10 @@ static func can_break(t: int, tool: String, power: float) -> bool:
 	if t == AIR:
 		return false
 	if tool == "drill":
-		return drill[t] == 1
+		return drill[t] == 1 or Evolutions.drill_extra(t)
 	if tool == "impact":
-		return impact[t] >= 0.0 and power >= impact[t]
+		if impact[t] < 0.0:
+			# 进化「震荡冲撞」：满蓄力的撞击能撞开岩石
+			return t == ROCK and power >= 14.5 and Evolutions.has("shock_ram")
+		return power >= impact[t]
 	return false

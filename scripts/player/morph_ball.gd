@@ -13,7 +13,7 @@ enum { BALL, DRILL, BUBBLE }
 const FORMS: Array[Dictionary] = [
 	{"id": "ball", "name": "滚球", "ability": "冲撞 · 原地按住蓄力", "jump_name": "跳跃（按住更高）", "color": Color("46c3ff"),
 		"mass": 1.0, "shape": "sphere", "radius": 0.48, "roll": true,
-		"torque": 8.0, "ground_force": 2.5, "air_force": 3.0, "max_speed": 7.0, "boost_speed": 11.0,
+		"torque": 8.0, "ground_force": 2.2, "air_force": 3.0, "max_speed": 6.3, "boost_speed": 11.0,
 		"jump": 5.6, "air_jumps": 0, "glide": 0.0, "gravity": 1.25,
 		"friction": 0.9, "bounce": 0.12, "lin_damp": 0.08, "ang_damp": 0.6},
 	{"id": "drill", "name": "钻头", "ability": "钻掘 · 空中下砸", "jump_name": "小跳", "color": Color("ffb03b"),
@@ -726,6 +726,26 @@ func _wave() -> void:
 		if (b as Node3D).global_position.distance_to(global_position) < WAVE_RADIUS + 0.8 and b.has_method("reflect"):
 			b.call("reflect", global_position)
 			FloatText.spawn(get_parent(), (b as Node3D).global_position + Vector3.UP * 0.5, "打回去！", Color("9fe8ff"), 44, 1.0)
+	# 进化「共鸣气泡」：气浪震碎附近的共鸣晶簇和碎裂石板；扫描标出过的回声晶核会被吸过来
+	if Evolutions.has("resonance") and world:
+		var c := world.to_v(global_position)
+		var rr := int(WAVE_RADIUS / VoxelWorld.VOXEL)
+		var hit := 0
+		for z in range(-rr, rr + 1, 2):
+			for y in range(-rr, rr + 1, 2):
+				for x in range(-rr, rr + 1, 2):
+					if x * x + y * y + z * z > rr * rr:
+						continue
+					var q := c + Vector3i(x, y, z)
+					var t := world.vget(q)
+					if t == Blocks.GEM_CHAIN or t == Blocks.CRUMBLE:
+						world.vbreak(q, "impact", 99.0, hit % 3 == 0)
+						hit += 1
+		for core in get_tree().get_nodes_in_group("scan_target"):
+			var cn := core as Node3D
+			if cn and cn.global_position.distance_to(global_position) < 6.0:
+				var tw := cn.create_tween()
+				tw.tween_property(cn, "global_position", global_position, 0.5).set_trans(Tween.TRANS_CUBIC)
 	for n in get_tree().get_nodes_in_group("usable_item"):
 		var rb := n as RigidBody3D
 		if rb and rb.global_position.distance_to(global_position) < WAVE_RADIUS and not rb.get("held"):
@@ -787,7 +807,9 @@ func _drill(dir: Vector3) -> void:
 	else:
 		# 往前钻出一条不规则的隧道：比主角宽一圈，洞壁参差不齐
 		var d := _move_dir.normalized()
-		n = world.break_sphere(global_position + d * 0.6 + Vector3.UP * 0.08, 0.64 + 0.1 * Upgrades.level("drill"), "drill", 1.0, d)
+		# 隧道底不低于球底：平滑地形上，脚下被挖出的浅坑会把球“吸”进去卡住
+		var r: float = FORMS[form].radius * BODY
+		n = world.break_sphere(global_position + d * 0.6 + Vector3.UP * 0.08, 0.64 + 0.1 * Upgrades.level("drill"), "drill", 1.0, d, false, global_position.y - r + 0.06)
 	if n > 0:
 		GameState.shake.emit(0.05)
 		Sfx.play("drill", global_position, -6.0, 0.1)
@@ -811,6 +833,8 @@ func _handle_impacts() -> void:
 		var radius := clampf(0.45 + speed * 0.07, 0.5, 1.55)
 		if charged_ram:
 			radius += 0.45     # 满蓄力冲刺：坑更大，厚锈一撞一个大洞
+		if Evolutions.has("shock_ram") and form == BALL:
+			radius += 0.3      # 进化「震荡冲撞」：震裂范围更大
 		var center: Vector3 = imp.point - n * 0.25
 		var floor_y := -INF if (n.y > 0.55 or low) else global_position.y - r + 0.02
 		var count := world.break_sphere(center, radius, "impact", speed, imp.vel, false, floor_y)

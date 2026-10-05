@@ -14,10 +14,22 @@ func _ready() -> void:
 	W = main.world
 	L = main.level
 	P.debug_override = true
+	# 记下地面层（y=3 格）的原样：战斗测试前把被砸出的坑补平——平滑地形上，球会顺着坑壁滚下去，干扰 AI 测试
+	for x in range(1, 91):
+		for z in range(16, 48):
+			_floor[Vector3i(x, 3, z)] = W.get_block(Vector3i(x, 3, z))
 	# 关卡里的锈块兽会干扰前面的路线测试，先移走；战斗测试时再单独放
 	if L.scrap and is_instance_valid(L.scrap):
 		L.scrap.queue_free()
 	_run()
+
+var _floor := {}
+
+func _restore_floor() -> void:
+	for c: Vector3i in _floor:
+		W.set_block(c, _floor[c])
+	W.flush_dirty()
+	await wait(0.1)
 
 func check(cond: bool, msg: String) -> void:
 	print(("  [PASS] " if cond else "  [FAIL] ") + msg)
@@ -96,7 +108,10 @@ func _run() -> void:
 	await tp(Vector3i(49, 4, 32), Vector3.ZERO, MorphBall.DRILL)
 	P.debug_input = Vector2(0, -1)
 	P.debug_ability = true
-	await wait(5.0)
+	for _k in 10:
+		await wait(0.5)
+		if OS.has_environment("CUBE7_DRILL_DEBUG"):
+			print("   drill pos=%s vel=%s drilling=%.2f" % [P.global_position, P.linear_velocity, P._drilling_t])
 	check(P.global_position.x > 28.3, "钻头钻穿 2m 岩壁，到达 x=%.1f" % P.global_position.x)
 	P.debug_ability = false
 	P.debug_input = Vector2.ZERO
@@ -267,6 +282,7 @@ func _enemy_tests() -> void:
 	check(is_instance_valid(e) and e.state == Scrapling.St.FLIPPED and e.global_position.x - ex > 1.0, "气浪把锈块兽推开 %.1f m 并掀翻" % (e.global_position.x - ex))
 	e.queue_free()
 	# e. 发现 → 蓄力 → 冲锋撞到 PIX，扣一格护盾
+	await _restore_floor()
 	e = await _enemy(Vector3i(46, 3, 26), PI / 2.0, true)
 	await tp(Vector3i(40, 4, 26), Vector3.ZERO, MorphBall.BALL)
 	var sh := GameState.shield
@@ -343,11 +359,15 @@ func _combat2_tests() -> void:
 	check(not is_instance_valid(fly), "晕在地上的锈蜂被滚球撞碎")
 	await _clear_enemies()
 	# c2. 锈蜂 AI：俯冲后扎在地上
+	await _restore_floor()
 	fly = await _spawn(Rustfly.new(), Vector3i(48, 7, 26), true) as Rustfly
 	await tp(Vector3i(44, 4, 26), Vector3.ZERO, MorphBall.BALL)
 	var stuck := false
-	for k in 60:
-		await wait(0.1)
+	# 每个物理帧都看一眼：扎地后 PIX 被撞回来时可能顺手把它撞碎，状态只维持很短
+	for k in 360:
+		await get_tree().physics_frame
+		if OS.has_environment("CUBE7_DRILL_DEBUG") and k % 30 == 0:
+			print("   fly ", fly.state if is_instance_valid(fly) else -1, " ", fly.global_position if is_instance_valid(fly) else Vector3.ZERO, " P=", P.global_position)
 		if is_instance_valid(fly) and fly.state == Rustfly.St.STUCK:
 			stuck = true
 			break

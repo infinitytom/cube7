@@ -20,6 +20,8 @@ const CELL_M := VOXEL * CELL
 const GROUP := 2            ## 每个渲染节点合并 GROUP³ 个小区块
 const CHUNK := 8            ## 小区块：破坏时只需重建很小的一块，避免卡顿
 const FALL_STEP := 0.025    ## 砂块下落一个体素的间隔（秒）
+const SMOOTH_SET := 4       ## 远景网格里的第 4 组：平滑曲面（自然材质）
+const GSIZE := CHUNK * GROUP   ## 一个渲染组的边长（体素）——平滑地形按渲染组整块生成
 
 const DIRS: Array[Vector3i] = [
 	Vector3i(1, 0, 0), Vector3i(-1, 0, 0),
@@ -35,7 +37,8 @@ const TANGENTS: Array = [
 	[Vector3i(1, 0, 0), Vector3i(0, 1, 0)],
 	[Vector3i(1, 0, 0), Vector3i(0, 1, 0)],
 ]
-const FACE_SHADE: Array[float] = [0.80, 0.80, 1.0, 0.55, 0.88, 0.88]
+## 烘焙的朝向明暗：实时的卡通光照已经负责明暗，这里只留一点点，让方块边角更清楚
+const FACE_SHADE: Array[float] = [0.94, 0.94, 1.0, 0.85, 0.97, 0.97]
 const AO_CURVE: Array[float] = [1.0, 0.78, 0.62, 0.48]
 
 const PickupScript := preload("res://scripts/voxel/pickup.gd")
@@ -58,7 +61,8 @@ var data := PackedByteArray()
 var shapes := PackedByteArray()
 var _lin_colors := PackedColorArray()
 var _chunks := {}          ## 渲染组坐标 -> 节点
-var _sub := {}             ## 小区块坐标 -> [网格数组, 碰撞三角形, 玻璃碰撞三角形]
+var _sub := {}             ## 小区块坐标 -> [网格数组, 碰撞三角形, 玻璃碰撞三角形, 有没有平滑材质]
+var _gsmooth := {}         ## 渲染组坐标 -> 平滑地形网格（TerrainMesher 的输出）
 var _gdirty := {}
 var _dirty := {}
 var _cell_hit := {}        ## 已经掉过落物的格（一格只掉一次金币/能量/道具）
@@ -108,6 +112,7 @@ func setup(new_size: Vector3i) -> void:
 		(c["mesh"] as Node).queue_free()
 	_chunks.clear()
 	_sub.clear()
+	_gsmooth.clear()
 	if fire:
 		fire.burning.clear()
 		fire.sources.clear()
@@ -668,6 +673,9 @@ func _chain_from(p: Vector3i, t: int) -> void:
 					_drops(q, t)
 				block_broken.emit(q, t)
 				_chain_from(q, t)
+				# 连锁崩掉的支撑上面托着的东西也要检查（落石陷阱：木架塌了，石头掉下来）
+				var around: Array[Vector3i] = [q]
+				detach_floating(around)
 		GameState.shake.emit(0.12))
 
 ## Boss 啃地形：球形范围里除了 protect 列表以外的方块全部挖掉（记进破坏记录，有碎屑，不给掉落）
@@ -699,46 +707,159 @@ func vbreak_any(p: Vector3i) -> void:
 	if t == Blocks.AIR:
 		return
 	vset(p, Blocks.AIR)
-	_spawn_debris(vcenter(p), Blocks.colors[t])
+	_spawn_debris(vcenter(p), t)
 
 ## 以世界坐标为球心破坏一片方块，返回破坏数量。
-## 为了更像真实的破坏，形状带随机性：
-##   · 每一格的“破坏半径”都随机抖动，坑口边缘参差不齐
+## 破坏形状模拟真实材料：
+##   · 坑口轮廓由连续噪声决定（不是逐格随机的“麻点”），边缘参差但连贯
 ##   · 沿撞击方向拉长，撞得越狠坑越深
-##   · 坑外一圈的方块有一定概率被震裂
-##   · 破坏后和大地断开的小碎块会整块掉落、翻滚、落地再碎
+##   · 脆的材料（岩、石板、加固墙……）按 Voronoi 裂成几大块：坑边缘的整块碎片会被崩飞出去
+##   · 土、草、沙是碗状的坑，带一圈震松的边；木头碎成木片，玻璃碎成薄片
+##   · 破坏后和大地断开的部分会整块掉落、翻滚，落地再碎
 ## min_y：低于这个高度（世界坐标）的体素不破坏——横着撞墙时不把脚下的地面一起啃掉
 func break_sphere(center: Vector3, radius: float, tool: String, power: float, dir := Vector3.ZERO, soft_only := false, min_y := -INF) -> int:
+	prof_t0 = Time.get_ticks_usec()
 	var c := to_v(center)
-	var r := int(ceil(radius * 1.35 / VOXEL))
+	var r := int(ceil(radius * 1.45 / VOXEL))
 	var count := 0
 	var broken: Array[Vector3i] = []
 	var d := dir.normalized() if dir.length() > 0.01 else Vector3.ZERO
-	for z in range(c.z - r, c.z + r + 1):
-		for y in range(c.y - r, c.y + r + 1):
-			for x in range(c.x - r, c.x + r + 1):
-				var p := Vector3i(x, y, z)
-				var bt := vget(p)
+	# 裂块的种子点：坑周围随机撒几颗，离中心近的种子所在的整块都会碎掉
+	var seeds: Array[Vector3] = []
+	var nseed := 5 + int(radius * 4.0)
+	for i in nseed:
+		var sp := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)).normalized() * _rng.randf_range(0.2, 1.5) * radius
+		seeds.append(center + sp)
+	# 只有重击（撞击、爆炸，半径够大）才会把岩石裂成大块；钻头是干净的圆隧道
+	var brittle := tool == "impact" and radius >= 0.9
+	# 最远可能被波及的距离（脆性裂块 1.45 倍，噪声坑沿 1.32 倍 + 一圈掉渣）
+	var reach := radius * 1.45 if brittle else radius * 1.32 + VOXEL * 1.5
+	r = int(ceil(reach / VOXEL)) + 1
+	var first_t := Blocks.ROCK
+	var frag := {}     # 种子序号 -> 这块碎片里被拆下来的体素（之后整块崩飞）
+	_crack_noise.seed = _rng.randi()
+	# 只遍历球内的体素（按行算出 x 的范围），直接读数组——大坑一次几千个体素，这里要快
+	var rr := float(r * r)
+	var gxf := global_transform
+	var sx := size.x
+	var sxy := size.x * size.y
+	for z in range(maxi(c.z - r, 0), mini(c.z + r, size.z - 1) + 1):
+		var dz := z - c.z
+		for y in range(maxi(c.y - r, 0), mini(c.y + r, size.y - 1) + 1):
+			var dy := y - c.y
+			var rem := rr - dz * dz - dy * dy
+			if rem < 0.0:
+				continue
+			var hx := int(sqrt(rem))
+			var row := sx * y + sxy * z
+			for x in range(maxi(c.x - hx, 0), mini(c.x + hx, sx - 1) + 1):
+				var bt: int = data[row + x]
 				if bt == Blocks.AIR or (soft_only and Blocks.soft[bt] == 0 and bt != Blocks.COPPER):
 					continue
-				var vc := vcenter(p)
+				var p := Vector3i(x, y, z)
+				var vc := gxf * ((Vector3(p) + Vector3(0.5, 0.5, 0.5)) * VOXEL)
 				if vc.y < min_y:
 					continue
 				var off := vc - center
 				# 沿撞击方向压扁距离 → 坑沿着冲击方向更深
 				var along := off.dot(d)
 				var dist := (off - d * along).length() + absf(along) * (0.7 if along > 0.0 else 1.0)
-				var jitter := _rng.randf_range(0.95, 1.22)   # 只往外抖：坑不会比原来小，边缘更参差
-				var inside := dist <= radius * jitter
-				var fringe := not inside and dist <= radius * 1.35 and _rng.randf() < 0.28
-				if (inside or fringe) and vbreak(p, tool, power, (count % 5) == 0):
+				if dist > reach:
+					continue
+				var kind := Blocks.frag_kind(bt)
+				var inside := false
+				var seed_id := -1
+				if kind == Blocks.Frag.ROCK and brittle:
+					# 脆：落在“近种子”所属的 Voronoi 块里就整块碎（坑壁是一个个裂面）
+					var best := INF
+					for si in seeds.size():
+						var dd := vc.distance_squared_to(seeds[si])
+						if dd < best:
+							best = dd
+							seed_id = si
+					var sd := seeds[seed_id].distance_to(center)
+					inside = dist <= radius * 0.75 or (sd <= radius * 1.05 and dist <= radius * 1.45)
+				else:
+					# 韧 / 松：连续噪声决定坑沿（只往外扩，坑不会比原来小）；坑里面不用算噪声
+					if dist <= radius:
+						inside = true
+					else:
+						var nv := _crack_noise.get_noise_3dv(vc * 1.6) * 0.5 + 0.5
+						var edge := radius * (1.0 + 0.32 * nv)
+						inside = dist <= edge
+						if not inside and kind == Blocks.Frag.EARTH and dist <= edge + VOXEL * 1.5:
+							# 震松的一圈：零星掉渣
+							inside = _rng.randf() < 0.12
+				if inside and vbreak(p, tool, power, false):
+					if count == 0:
+						first_t = bt
 					count += 1
 					broken.append(p)
+					if seed_id >= 0 and seeds[seed_id].distance_to(center) > radius * 0.55:
+						if not frag.has(seed_id):
+							frag[seed_id] = []
+						(frag[seed_id] as Array).append([vc, bt])
+					elif count % 4 == 0:
+						_spawn_debris(vc, bt)
+	var t_loop := Time.get_ticks_usec()
 	if count > 0:
 		if tool == "impact":
 			GameState.shake.emit(minf(0.08 + count * 0.02, 0.35))
+		_fling_fragments(frag, center, d, power)
+		var t_frag := Time.get_ticks_usec()
+		Sfx.break_sound(first_t, center)
 		detach_floating(broken)
+		if PROFILE:
+			prof_acc[0] += t_loop - prof_t0
+			prof_acc[1] += t_frag - t_loop
+			prof_acc[2] += Time.get_ticks_usec() - t_frag
 	return count
+
+static var PROFILE := false
+static var prof_acc := [0, 0, 0]
+var prof_t0 := 0
+
+## 把裂下来的整块碎片崩飞出去（纯视觉 + 物理，掉落已经在 vbreak 里结算过了）
+const MAX_FRAGMENTS := 5
+func _fling_fragments(frag: Dictionary, center: Vector3, dir: Vector3, power: float) -> void:
+	var keys := frag.keys()
+	keys.sort_custom(func(a: int, b: int) -> bool: return (frag[a] as Array).size() > (frag[b] as Array).size())
+	var n := 0
+	for k in keys:
+		var list: Array = frag[k]
+		if list.size() < 3 or n >= MAX_FRAGMENTS or VoxelChunk.alive >= VoxelChunk.MAX_ALIVE:
+			for e in list:
+				_spawn_debris(e[0], e[1])
+			continue
+		n += 1
+		var sum := Vector3.ZERO
+		for e in list:
+			sum += e[0]
+		var mid := sum / list.size()
+		var blocks := []
+		for e in list:
+			blocks.append([(e[0] as Vector3) - mid, e[1]])
+		var ch := VoxelChunk.new()
+		ch.world = self
+		ch.blocks = blocks
+		ch.spawn_origin = to_local(mid)
+		ch.fragment = true
+		add_child(ch)
+		ch.global_position = mid
+		var outv := (mid - center).normalized()
+		if outv.length() < 0.1:
+			outv = Vector3.UP
+		var spd := clampf(power * 0.25, 2.0, 6.0) * _rng.randf_range(0.6, 1.1)
+		ch.linear_velocity = (outv + Vector3.UP * 0.6 + dir * 0.4).normalized() * spd
+		ch.angular_velocity = Vector3(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
+
+var _crack_noise := _make_crack_noise()
+static func _make_crack_noise() -> FastNoiseLite:
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.frequency = 0.9
+	n.fractal_octaves = 2
+	return n
 
 var _rng := RandomNumberGenerator.new()
 
@@ -832,7 +953,7 @@ func _spawn_chunk(cells: Array[Vector3i]) -> void:
 
 ## 在世界坐标处播放破坏特效和掉落（碎块落地时用）
 func break_fx_at(pos: Vector3, t: int, drops: bool) -> void:
-	_spawn_debris(pos, Blocks.colors[t])
+	_spawn_debris(pos, t)
 	Sfx.break_sound(t, pos)
 	if not drops:
 		return
@@ -847,7 +968,7 @@ func break_fx_at(pos: Vector3, t: int, drops: bool) -> void:
 
 func _spawn_break_fx(p: Vector3i, t: int) -> void:
 	var pos := vcenter(p)
-	_spawn_debris(pos, Blocks.colors[t])
+	_spawn_debris(pos, t)
 	Sfx.break_sound(t, pos)
 
 ## 一格（2×2×2 体素）里第一次有体素被破坏时返回 true
@@ -869,54 +990,194 @@ func _drops(p: Vector3i, t: int) -> void:
 	if item != "":
 		item_dropped.emit(item, pos)
 
-## 碎屑只是视觉粒子，0.6 秒内消散，不参与物理。
-## 同一帧里的所有碎屑合并成一个粒子系统（按位置发射、各自带方块颜色），大破坏也不会卡。
-var _debris_pts := PackedVector3Array()
-var _debris_cols := PackedColorArray()
-static var _debris_mesh: BoxMesh
+## 碎屑只是视觉粒子，不参与物理。按材质分成几种形状：
+##   岩石 → 不规则的多面体小石块；泥土 → 圆圆的土块；木头 → 细长的木片（翻得快）；
+##   玻璃 → 薄薄的三角碎片（闪一下）；树叶 → 小叶片（飘着落下）；金属 → 小块 + 零星火花
+## 同一帧、同一种材质的碎屑合并成一个粒子系统（各自带方块颜色），大破坏也不会卡。
+var _debris := {}      # Frag -> [PackedVector3Array 位置, PackedColorArray 颜色]
+static var _frag_meshes := {}
 
-func _spawn_debris(pos: Vector3, color: Color) -> void:
-	if _debris_pts.size() < 40:
-		_debris_pts.append(to_local(pos))
-		_debris_cols.append(color)
+func _spawn_debris(pos: Vector3, t: int) -> void:
+	var k := Blocks.frag_kind(t)
+	if not _debris.has(k):
+		_debris[k] = [PackedVector3Array(), PackedColorArray()]
+	var e: Array = _debris[k]
+	var pts: PackedVector3Array = e[0]
+	if pts.size() >= 40:
+		return
+	pts.append(to_local(pos))
+	var cols: PackedColorArray = e[1]
+	# 颜色带一点深浅变化（碎块的断面比表面暗）
+	cols.append(Blocks.colors[t] * _rng.randf_range(0.72, 1.05))
+	e[0] = pts
+	e[1] = cols
+
+static func _frag_mesh(k: int) -> Mesh:
+	if _frag_meshes.has(k):
+		return _frag_meshes[k]
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.75
+	var m: Mesh
+	match k:
+		Blocks.Frag.WOOD:
+			var b := BoxMesh.new()
+			b.size = Vector3(0.05, 0.05, 0.24)
+			m = b
+		Blocks.Frag.GLASS:
+			m = _shard_mesh(0.16, 0.012)
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.albedo_color = Color(1, 1, 1, 0.75)
+			mat.metallic_specular = 1.0
+			mat.roughness = 0.05
+		Blocks.Frag.LEAF:
+			m = _shard_mesh(0.12, 0.004)
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		Blocks.Frag.EARTH:
+			var sp := SphereMesh.new()
+			sp.radius = 0.06
+			sp.height = 0.1
+			sp.radial_segments = 6
+			sp.rings = 3
+			m = sp
+		Blocks.Frag.CRYSTAL:
+			m = _shard_mesh(0.14, 0.05)
+			mat.emission_enabled = true
+			mat.emission = Color(0.4, 0.8, 1.0)
+			mat.emission_energy_multiplier = 0.6
+		Blocks.Frag.METAL:
+			var b2 := BoxMesh.new()
+			b2.size = Vector3(0.09, 0.03, 0.09)
+			m = b2
+			mat.metallic = 0.6
+			mat.roughness = 0.35
+		_:
+			m = _pebble_mesh(0.08)
+	m.surface_set_material(0, mat)
+	_frag_meshes[k] = m
+	return m
+
+## 不规则小石块：随机挤压过的八面体（每个面都是斜的，像敲下来的碎石）
+static func _pebble_mesh(r: float) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var pts: Array[Vector3] = []
+	for v in [Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN, Vector3.FORWARD, Vector3.BACK]:
+		pts.append(v * r * rng.randf_range(0.6, 1.25) + Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * r * 0.25)
+	var tris := [[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for t in tris:
+		var a: Vector3 = pts[t[0]]
+		var b: Vector3 = pts[t[1]]
+		var c: Vector3 = pts[t[2]]
+		var n := (b - a).cross(c - a).normalized()
+		if n.dot(a + b + c) < 0.0:
+			var tmp := b
+			b = c
+			c = tmp
+			n = -n
+		st.set_normal(n)
+		st.add_vertex(a)
+		st.add_vertex(c)
+		st.add_vertex(b)
+	return st.commit()
+
+## 薄片（玻璃 / 叶子 / 晶片）：一个有厚度的三角形
+static func _shard_mesh(r: float, th: float) -> ArrayMesh:
+	var a := Vector3(0, 0, r)
+	var b := Vector3(r * 0.8, 0, -r * 0.5)
+	var c := Vector3(-r * 0.6, 0, -r * 0.6)
+	var up := Vector3.UP * th
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for side in [1.0, -1.0]:
+		st.set_normal(Vector3.UP * side)
+		if side > 0.0:
+			st.add_vertex(a + up); st.add_vertex(b + up); st.add_vertex(c + up)
+		else:
+			st.add_vertex(a - up); st.add_vertex(c - up); st.add_vertex(b - up)
+	return st.commit()
 
 func _flush_debris() -> void:
-	if _debris_pts.is_empty():
+	if _debris.is_empty():
 		return
-	if _debris_mesh == null:
-		_debris_mesh = BoxMesh.new()
-		_debris_mesh.size = Vector3.ONE * 0.13
-		var mat := StandardMaterial3D.new()
-		mat.vertex_color_use_as_albedo = true
-		mat.roughness = 0.8
-		_debris_mesh.material = mat
-	var ps := CPUParticles3D.new()
-	ps.mesh = _debris_mesh
-	ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
-	ps.emission_points = _debris_pts
-	ps.emission_colors = _debris_cols
-	ps.amount = clampi(_debris_pts.size() * 5, 6, 120)
-	ps.one_shot = true
-	ps.explosiveness = 1.0
-	ps.lifetime = 0.85
-	ps.direction = Vector3.UP
-	ps.spread = 75.0
-	ps.initial_velocity_min = 2.5
-	ps.initial_velocity_max = 6.5
-	ps.gravity = Vector3(0, -14, 0)
-	ps.angular_velocity_min = -360.0
-	ps.angular_velocity_max = 360.0
-	ps.scale_amount_min = 0.5
-	ps.scale_amount_max = 1.4
-	ps.scale_amount_curve = _shrink_curve()
-	ps.local_coords = false
-	add_child(ps)
-	ps.emitting = true
-	get_tree().create_timer(1.1).timeout.connect(ps.queue_free)
-	if _debris_pts.size() >= 16:
-		_dust(_debris_pts)
-	_debris_pts = PackedVector3Array()
-	_debris_cols = PackedColorArray()
+	var all_pts := PackedVector3Array()
+	for k: int in _debris:
+		var e: Array = _debris[k]
+		var pts: PackedVector3Array = e[0]
+		if pts.is_empty():
+			continue
+		all_pts.append_array(pts)
+		var ps := CPUParticles3D.new()
+		ps.mesh = _frag_mesh(k)
+		ps.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+		ps.emission_points = pts
+		ps.emission_colors = e[1]
+		ps.one_shot = true
+		ps.explosiveness = 0.95
+		ps.direction = Vector3.UP
+		ps.particle_flag_rotate_y = false
+		ps.angular_velocity_min = -540.0
+		ps.angular_velocity_max = 540.0
+		ps.scale_amount_curve = _shrink_curve()
+		ps.local_coords = false
+		match k:
+			Blocks.Frag.LEAF:
+				ps.amount = clampi(pts.size() * 4, 6, 80)
+				ps.lifetime = 1.6
+				ps.spread = 90.0
+				ps.initial_velocity_min = 1.0
+				ps.initial_velocity_max = 3.0
+				ps.gravity = Vector3(0, -2.2, 0)
+				ps.damping_min = 1.5
+				ps.damping_max = 3.0
+				ps.scale_amount_min = 0.7
+				ps.scale_amount_max = 1.3
+			Blocks.Frag.WOOD:
+				ps.amount = clampi(pts.size() * 4, 5, 90)
+				ps.lifetime = 1.0
+				ps.spread = 70.0
+				ps.initial_velocity_min = 3.0
+				ps.initial_velocity_max = 7.0
+				ps.gravity = Vector3(0, -15, 0)
+				ps.angular_velocity_min = -900.0
+				ps.angular_velocity_max = 900.0
+				ps.scale_amount_min = 0.5
+				ps.scale_amount_max = 1.3
+			Blocks.Frag.GLASS, Blocks.Frag.CRYSTAL:
+				ps.amount = clampi(pts.size() * 5, 6, 90)
+				ps.lifetime = 0.9
+				ps.spread = 85.0
+				ps.initial_velocity_min = 3.0
+				ps.initial_velocity_max = 8.0
+				ps.gravity = Vector3(0, -16, 0)
+				ps.scale_amount_min = 0.5
+				ps.scale_amount_max = 1.4
+			Blocks.Frag.EARTH:
+				ps.amount = clampi(pts.size() * 4, 5, 100)
+				ps.lifetime = 0.8
+				ps.spread = 60.0
+				ps.initial_velocity_min = 2.0
+				ps.initial_velocity_max = 5.5
+				ps.gravity = Vector3(0, -15, 0)
+				ps.scale_amount_min = 0.6
+				ps.scale_amount_max = 1.6
+			_:
+				ps.amount = clampi(pts.size() * 4, 5, 100)
+				ps.lifetime = 0.95
+				ps.spread = 75.0
+				ps.initial_velocity_min = 2.5
+				ps.initial_velocity_max = 6.5
+				ps.gravity = Vector3(0, -16, 0)
+				ps.scale_amount_min = 0.5
+				ps.scale_amount_max = 1.8
+		add_child(ps)
+		ps.emitting = true
+		get_tree().create_timer(ps.lifetime + 0.4).timeout.connect(ps.queue_free)
+	if all_pts.size() >= 12:
+		_dust(all_pts)
+	_debris.clear()
 
 ## 大破坏时腾起的一团尘土
 static var _dust_mesh: SphereMesh
@@ -1006,9 +1267,13 @@ func _rebuild_dirty() -> void:
 		for c: Vector3i in groups[g]:
 			_dirty.erase(c)
 			_build_chunk(c)
+		if _group_needs_smooth(g):
+			_smooth_group(g)
 		_commit_group(g)
 		_gdirty.erase(g)
-		if (Time.get_ticks_usec() - t0) > REBUILD_BUDGET_MS * 1000.0:
+		# 积压多（大破坏、重构波）时多给一点预算，让地形尽快跟上，不留空洞
+		var budget := REBUILD_BUDGET_MS * (1.8 if gkeys.size() > 6 else 1.0)
+		if (Time.get_ticks_usec() - t0) > budget * 1000.0:
 			break
 
 func _step_falling() -> void:
@@ -1058,12 +1323,13 @@ func _mark_dirty_around(p: Vector3i) -> void:
 	var lx := p.x & 7
 	var ly := p.y & 7
 	var lz := p.z & 7
-	var x0 := cx - 1 if lx == 0 else cx
-	var x1 := cx + 1 if lx == 7 else cx
-	var y0 := cy - 1 if ly == 0 else cy
-	var y1 := cy + 1 if ly == 7 else cy
-	var z0 := cz - 1 if lz == 0 else cz
-	var z1 := cz + 1 if lz == 7 else cz
+	# 平滑曲面要看周围 3 格（模糊 + 接缝），所以离边界 3 格以内都会影响隔壁区块
+	var x0 := cx - 1 if lx < 3 else cx
+	var x1 := cx + 1 if lx > 4 else cx
+	var y0 := cy - 1 if ly < 3 else cy
+	var y1 := cy + 1 if ly > 4 else cy
+	var z0 := cz - 1 if lz < 3 else cz
+	var z1 := cz + 1 if lz > 4 else cz
 	if x0 == x1 and y0 == y1 and z0 == z1:
 		_dirty[Vector3i(cx, cy, cz)] = true
 		return
@@ -1073,9 +1339,9 @@ func _mark_dirty_around(p: Vector3i) -> void:
 				_dirty[Vector3i(x, y, z)] = true
 
 func _mark_dirty_box(lo: Vector3i, hi: Vector3i) -> void:
-	for cz in range(floori((lo.z - 1) / float(CHUNK)), floori((hi.z + 1) / float(CHUNK)) + 1):
-		for cy in range(floori((lo.y - 1) / float(CHUNK)), floori((hi.y + 1) / float(CHUNK)) + 1):
-			for cx in range(floori((lo.x - 1) / float(CHUNK)), floori((hi.x + 1) / float(CHUNK)) + 1):
+	for cz in range(floori((lo.z - 3) / float(CHUNK)), floori((hi.z + 3) / float(CHUNK)) + 1):
+		for cy in range(floori((lo.y - 3) / float(CHUNK)), floori((hi.y + 3) / float(CHUNK)) + 1):
+			for cx in range(floori((lo.x - 3) / float(CHUNK)), floori((hi.x + 3) / float(CHUNK)) + 1):
 				_dirty[Vector3i(cx, cy, cz)] = true
 
 # ---------------------------------------------------------------- 网格生成
@@ -1190,13 +1456,121 @@ var _cat := PackedByteArray()
 
 var _mesh_mutex := Mutex.new()
 
+var _smooth := PackedByteArray()
+var _dens_tab := PackedFloat32Array()
+const RAMP_FILL := {1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25, 5: 0.75, 6: 0.75, 7: 0.75, 8: 0.75, 9: 0.5, 10: 0.5, 11: 0.5, 12: 0.5}
+
 func _init_tables() -> void:
 	if _occ.is_empty():
 		_occ.resize(256)
 		_cat.resize(256)
+		_smooth.resize(256)
+		_dens_tab.resize(256)
 		for t in Blocks.COUNT:
 			_occ[t] = 1 if _is_occluder(t) else 0
 			_cat[t] = _category(t)
+			_smooth[t] = Blocks.smooth[t]
+			_dens_tab[t] = 1.0 if _occ[t] == 1 else 0.0
+
+## 平滑地形的填充度：只有平滑材质算“实心”（方块类的箱子、金属、玻璃对地形来说是空的，交界处由方块自己的面盖住）
+func _sdens(t: int, sh: int) -> float:
+	if _smooth[t] == 0:
+		return 0.0
+	return 1.0 if sh == 0 else float(RAMP_FILL.get(sh, 0.5))
+
+## 一个渲染组的平滑地形（可以在工作线程里调用：只读体素数据）
+func _smooth_group(g: Vector3i) -> void:
+	var res := {}
+	var lo := g * GSIZE
+	var n := Vector3i(GSIZE + 1, GSIZE + 1, GSIZE + 1)
+	if TerrainMesher.available():
+		res = _smooth_group_vt(lo, n)
+	if res.has("fallback") or not TerrainMesher.available():
+		res = _smooth_group_sn(lo, n)
+	_mesh_mutex.lock()
+	if res.is_empty():
+		_gsmooth.erase(g)
+	else:
+		_gsmooth[g] = res
+	_mesh_mutex.unlock()
+
+func _smooth_xf(g: Vector3i) -> Transform3D:
+	return Transform3D(Basis.from_scale(Vector3.ONE * VOXEL), (Vector3(g * GSIZE) + Vector3(0.5, 0.5, 0.5)) * VOXEL)
+
+## Voxel Tools：原始数据从 lo-2 开始（Transvoxel 前边框 1 + 模糊 1），ZXY 顺序
+func _smooth_group_vt(lo: Vector3i, n: Vector3i) -> Dictionary:
+	var bs := n + Vector3i(2, 2, 2)
+	var rs := bs + Vector3i(2, 2, 2)
+	var ro := lo - Vector3i(2, 2, 2)
+	var dens := PackedFloat32Array()
+	dens.resize(rs.x * rs.y * rs.z)
+	var slots := PackedByteArray()
+	slots.resize(bs.x * bs.y * bs.z)
+	var slot_tab := TerrainPalette.table()
+	var sx := size.x
+	var sxy := size.x * size.y
+	var any := false
+	var i := 0
+	for z in rs.z:
+		var wz := ro.z + z
+		var zin := wz >= 0 and wz < size.z
+		for x in rs.x:
+			var wx := ro.x + x
+			var xin := zin and wx >= 0 and wx < sx
+			var bz := z - 1
+			var bx := x - 1
+			var inner_xz := bz >= 0 and bz < bs.z and bx >= 0 and bx < bs.x
+			for y in rs.y:
+				var wy := ro.y + y
+				if xin and wy >= 0 and wy < size.y:
+					var wi := wx + sx * wy + sxy * wz
+					var t: int = data[wi]
+					if t != 0 and _smooth[t] == 1:
+						var sh: int = shapes[wi]
+						dens[i] = 1.0 if sh == 0 else float(RAMP_FILL.get(sh, 0.5))
+						any = true
+						var by := y - 1
+						if inner_xz and by >= 0 and by < bs.y:
+							slots[by + bs.y * (bx + bs.x * bz)] = slot_tab[t]
+				i += 1
+	if not any:
+		return {}
+	return TerrainMesher.build_vt(dens, slots, n)
+
+## 没有 Voxel Tools：GDScript Surface Nets（XYZ 顺序、四周 PAD 格边框）
+func _smooth_group_sn(lo: Vector3i, n: Vector3i) -> Dictionary:
+	var pad := SmoothMesher.PAD
+	var dims := n + Vector3i(pad * 2, pad * 2, pad * 2)
+	var types := PackedByteArray()
+	types.resize(dims.x * dims.y * dims.z)
+	var dens := PackedFloat32Array()
+	dens.resize(types.size())
+	var sx := size.x
+	var sxy := size.x * size.y
+	var o := lo - Vector3i(pad, pad, pad)
+	var any := false
+	var i := 0
+	for lz in dims.z:
+		var z := o.z + lz
+		for ly in dims.y:
+			var y := o.y + ly
+			var row_ok := z >= 0 and z < size.z and y >= 0 and y < size.y
+			var row := sx * y + sxy * z
+			for lx in dims.x:
+				var x := o.x + lx
+				if row_ok and x >= 0 and x < sx:
+					var t: int = data[row + x]
+					if t != 0 and _smooth[t] == 1:
+						types[i] = t
+						dens[i] = _sdens(t, shapes[row + x])
+						any = true
+				i += 1
+	if not any:
+		return {}
+	var r := SmoothMesher.build_dict(types, dens, dims, n)
+	if (r["verts"] as PackedVector3Array).is_empty():
+		return {}
+	return r
 
 func _build_chunk(c: Vector3i) -> void:
 	var origin := c * CHUNK
@@ -1277,13 +1651,16 @@ func _build_chunk(c: Vector3i) -> void:
 		voff.append(v.x + v.y * P + v.z * PP)
 	const CS := [Vector2i(-1, -1), Vector2i(1, -1), Vector2i(1, 1), Vector2i(-1, 1)]
 	const CUV := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
-	var slope_lists := [[], [], [], [], []]
+	var has_smooth := false
 	for lz in range(1, ez + 1):
 		for ly in range(1, ey + 1):
 			for lx in range(1, ex + 1):
 				var i := lx + P * ly + PP * lz
 				var t: int = pb[i]
 				if t == Blocks.AIR:
+					continue
+				if _smooth[t] == 1:
+					has_smooth = true
 					continue
 				var p := Vector3i(origin.x + lx - 1, origin.y + ly - 1, origin.z + lz - 1)
 				var r: int = Blocks.render[t]
@@ -1308,7 +1685,8 @@ func _build_chunk(c: Vector3i) -> void:
 				for f in 6:
 					var ni := i + doff[f]
 					var nt: int = pb[ni]
-					var visible := nt == Blocks.AIR or (Blocks.render[nt] == Blocks.Render.GLASS and nt != t) or psh[ni] != 0
+					# 挨着平滑地形的面也要画：地形曲面在交界处是圆的，会露出方块的边
+					var visible := nt == Blocks.AIR or (Blocks.render[nt] == Blocks.Render.GLASS and nt != t) or psh[ni] != 0 or _smooth[nt] == 1
 					if not visible:
 						continue
 					var uo: int = uoff[f]
@@ -1357,11 +1735,11 @@ func _build_chunk(c: Vector3i) -> void:
 	var g := Vector3i(c.x >> 1, c.y >> 1, c.z >> 1)
 	_mesh_mutex.lock()
 	_gdirty[g] = true
-	if v1.is_empty() and v2.is_empty() and v3.is_empty():
+	if v1.is_empty() and v2.is_empty() and v3.is_empty() and not has_smooth:
 		_sub.erase(c)
 		_mesh_mutex.unlock()
 		return
-	_sub[c] = [[null, [v1, n1, c1, u1, w1], [v2, n2, c2, u2, w2], [v3, n3, c3, u3, w3]], faces, glass_faces]
+	_sub[c] = [[null, [v1, n1, c1, u1, w1], [v2, n2, c2, u2, w2], [v3, n3, c3, u3, w3]], faces, glass_faces, has_smooth]
 	_mesh_mutex.unlock()
 
 ## 把一个渲染组（GROUP³ 个小区块）的网格和碰撞拼起来
@@ -1385,8 +1763,11 @@ func _commit_group(g: Vector3i) -> void:
 						dst[k].append_array(src[k])
 				faces.append_array(sub[1])
 				glass_faces.append_array(sub[2])
+	_mesh_mutex.lock()
+	var sm: Dictionary = _gsmooth.get(g, {})
+	_mesh_mutex.unlock()
 	var node: Dictionary = _chunks.get(g, {})
-	var empty := faces.is_empty() and glass_faces.is_empty() and (sets[1][0] as PackedVector3Array).is_empty() and (sets[2][0] as PackedVector3Array).is_empty() and (sets[3][0] as PackedVector3Array).is_empty()
+	var empty := faces.is_empty() and glass_faces.is_empty() and (sets[1][0] as PackedVector3Array).is_empty() and (sets[2][0] as PackedVector3Array).is_empty() and (sets[3][0] as PackedVector3Array).is_empty() and sm.is_empty()
 	if empty:
 		if not node.is_empty():
 			(node["mesh"] as Node).queue_free()
@@ -1415,6 +1796,11 @@ func _commit_group(g: Vector3i) -> void:
 		_chunks[g] = node
 
 	var mesh := ArrayMesh.new()
+	# 平滑地形先放进网格，顺便拿它的三角形做碰撞（C++ 里展开，不用逐个三角形循环）
+	if not sm.is_empty():
+		TerrainMesher.add_surface(mesh, sm, _smooth_xf(g), TerrainPalette.material())
+		if mesh.get_surface_count() > 0:
+			faces.append_array(mesh.get_faces())
 	for rm in [Blocks.Render.OPAQUE, Blocks.Render.GLASS, Blocks.Render.GLOW]:
 		var set: Array = sets[rm]
 		if (set[0] as PackedVector3Array).is_empty():
@@ -1446,6 +1832,31 @@ func _commit_group(g: Vector3i) -> void:
 		gshape.shape = gs
 
 func _commit_groups() -> void:
+	_smooth_groups(_gdirty.keys())
 	for g in _gdirty.keys():
 		_commit_group(g)
 	_gdirty.clear()
+
+## 组里有没有平滑材质（看各小区块生成时记下的标记；以前有平滑网格的也要重算一次，好把它清掉）
+func _group_needs_smooth(g: Vector3i) -> bool:
+	if _gsmooth.has(g):
+		return true
+	for dz in GROUP:
+		for dy in GROUP:
+			for dx in GROUP:
+				var sub: Array = _sub.get(g * GROUP + Vector3i(dx, dy, dz), [])
+				if sub.size() > 3 and sub[3]:
+					return true
+	return false
+
+## 多个组的平滑地形（主线程串行：Voxel Tools 的网格器放进 WorkerThreadPool 会和它自己的线程池互相等待；
+## 每组约 2 毫秒，整关几百组不到 1 秒）
+func _smooth_groups(groups: Array) -> void:
+	var t0 := Time.get_ticks_msec()
+	var n := 0
+	for g: Vector3i in groups:
+		if _group_needs_smooth(g):
+			_smooth_group(g)
+			n += 1
+	if n > 20:
+		print("[Terrain] 平滑地形 %d 组 %d ms" % [n, Time.get_ticks_msec() - t0])

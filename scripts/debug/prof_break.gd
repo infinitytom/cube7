@@ -6,6 +6,8 @@ var P: MorphBall
 var W: VoxelWorld
 var _times: Array[float] = []
 var _last := 0
+var _bt := 0.0
+var _bn := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -50,13 +52,18 @@ func _run() -> void:
 	# 大量破坏：以玩家为中心一圈一圈砸
 	var c := P.global_position
 	var t0 := Time.get_ticks_usec()
+	VoxelWorld.PROFILE = true
 	for i in 24:
 		var a := i * 0.7
 		var p := c + Vector3(cos(a), 0, sin(a)) * (2.0 + i * 0.35) + Vector3.DOWN * 0.6
-		W.break_sphere(p, 1.7, "impact", 16.0, Vector3.DOWN)
+		var tb := Time.get_ticks_usec()
+		var nb := W.break_sphere(p, 1.7, "impact", 16.0, Vector3.DOWN)
+		_bt += (Time.get_ticks_usec() - tb) / 1000.0
+		_bn += nb
 		GameState.hitstop(0.05)
 		await get_tree().process_frame
-	print("break loop took %.1fms" % ((Time.get_ticks_usec() - t0) / 1000.0))
+	print("  loop/fragments/detach ms: ", VoxelWorld.prof_acc.map(func(v: int) -> float: return v / 1000.0))
+	print("break loop took %.1fms (break_sphere %.1fms for %d voxels)" % [(Time.get_ticks_usec() - t0) / 1000.0, _bt, _bn])
 	_report("during breaks")
 	await wait(1.0)
 	_report("0-1s after")

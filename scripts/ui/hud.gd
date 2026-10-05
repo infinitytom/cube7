@@ -16,6 +16,8 @@ var _shield_row: HBoxContainer
 var _frag_row: HBoxContainer
 var _frag: Label
 var _seeds: Label
+var _echo: Label
+var _echo_box: HBoxContainer
 var _obj_card: PanelContainer
 var _obj_text: Label
 var _nova: PanelContainer
@@ -73,6 +75,7 @@ func _ready() -> void:
 	GameState.shield_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.fragments_changed.connect(func(_v: int) -> void: _refresh_stats())
 	GameState.seeds_changed.connect(func(_v: int) -> void: _refresh_stats(true))
+	GameState.echo_changed.connect(func(_f: int, _t: int) -> void: _refresh_stats())
 	GameState.form_changed.connect(func(_i: int) -> void: _refresh_forms())
 	GameState.form_unlocked.connect(_on_form_unlocked)
 	GameState.device_changed.connect(func(_k: String) -> void: _refresh_prompts())
@@ -166,6 +169,7 @@ func _show_clear() -> void:
 		["coin", UIKit.ACCENT2, "金币", str(GameState.coins)],
 		["pupu", Color("7dffc8"), "救出噗噗", "%d / %d" % [GameState.seeds, GameState.seeds_total]],
 		["fragment", Color("c89bff"), "记忆碎片", "%d / %d" % [GameState.fragments, GameState.fragments_total]],
+		["core", Color("8ff7ff"), "回声晶核", "%d / %d" % [GameState.echo_found, GameState.echo_total]],
 		["save", UIKit.ACCENT, "游戏时间", SaveGame.format_time(float(SaveGame.data.get("play_time", 0.0)))],
 	]
 	for r in rows:
@@ -269,6 +273,13 @@ func _build_stats() -> void:
 	_frag_row.add_child(UIIcon.make("pupu", Color("7dffc8"), 22))
 	_seeds = UIKit.label("0 / 3", 20, Color("b8ffe2"), true)
 	_frag_row.add_child(_seeds)
+	_echo_box = HBoxContainer.new()
+	_echo_box.add_theme_constant_override("separation", 10)
+	_echo_box.add_child(UIKit.make_spacer(8))
+	_echo_box.add_child(UIIcon.make("core", Color("8ff7ff"), 22))
+	_echo = UIKit.label("0 / 5", 20, Color("c9fbff"), true)
+	_echo_box.add_child(_echo)
+	_frag_row.add_child(_echo_box)
 	v.add_child(_frag_row)
 
 func _rebuild_shields() -> void:
@@ -398,6 +409,11 @@ func _refresh_stats(pop := false) -> void:
 	_frag_row.visible = GameState.fragments_total > 0
 	_frag.text = "%d / %d" % [GameState.fragments, GameState.fragments_total]
 	_seeds.text = "%d / %d" % [GameState.seeds, GameState.seeds_total]
+	if _echo:
+		_echo_box.visible = GameState.echo_total > 0
+		_echo.text = "%d / %d" % [GameState.echo_found, GameState.echo_total]
+		if GameState.echo_total > 0:
+			_frag_row.visible = true
 
 func _refresh_forms() -> void:
 	var p := GameState.player as MorphBall

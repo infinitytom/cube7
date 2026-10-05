@@ -27,6 +27,7 @@ func _ready() -> void:
 	_row(v, "屏幕震动", "shake")
 	_row(v, "冲撞辅助瞄准", "aim_assist")
 	_row(v, "远景雾", "fog")
+	_row(v, "柔和阴影（环境光遮蔽）", "ssao")
 	var back := SettingRow.new()
 	back.title = "返回"
 	back.is_button = true

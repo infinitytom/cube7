@@ -8,6 +8,7 @@ var _list: VBoxContainer
 var _controls: PanelContainer
 var _settings: SettingsPanel
 var _upgrades: UpgradePanel
+var _evolve: UpgradePanel
 var _open := false
 
 func _ready() -> void:
@@ -42,6 +43,9 @@ func _ready() -> void:
 	_btn("改装 PIX", func() -> void:
 		_panel.visible = false
 		_upgrades.open())
+	_btn("形态进化", func() -> void:
+		_panel.visible = false
+		_evolve.open())
 	_btn("设置", func() -> void:
 		_panel.visible = false
 		_settings.open())
@@ -56,8 +60,17 @@ func _ready() -> void:
 	_settings.closed.connect(func() -> void:
 		_settings.visible = false
 		_panel.visible = true
-		(_list.get_child(6) as Button).grab_focus())
+		(_list.get_child(7) as Button).grab_focus())
 	_root.add_child(_settings)
+	_evolve = UpgradePanel.new()
+	_evolve.evolve = true
+	UIKit.place(_evolve, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-380, -330, 380, 330))
+	_evolve.visible = false
+	_evolve.closed.connect(func() -> void:
+		_evolve.visible = false
+		_panel.visible = true
+		(_list.get_child(6) as Button).grab_focus())
+	_root.add_child(_evolve)
 	_upgrades = UpgradePanel.new()
 	UIKit.place(_upgrades, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-380, -330, 380, 330))
 	_upgrades.visible = false
