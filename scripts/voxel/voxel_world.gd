@@ -660,6 +660,44 @@ func vbreak(p: Vector3i, tool: String, power: float, fx := true) -> bool:
 		_chain_from(p, t)
 	return true
 
+## 批量破坏（break_sphere 用）：和 vbreak 一样，但不逐个体素发信号——
+## 每一格（0.5 米）只发一次 cell_changed，大坑一次几百个体素也不卡
+var _batch_cells := {}
+func _vbreak_batch(p: Vector3i, i: int, t: int, tool: String, power: float) -> bool:
+	if not Blocks.can_break(t, tool, power):
+		return false
+	if Blocks.explodes[t] == 1 or Blocks.chain[t] == 1 or Blocks.ignites[t] == 1 or Blocks.falls[t] == 1:
+		return vbreak(p, tool, power, false)
+	log_damage(p, t)
+	data[i] = Blocks.AIR
+	shapes[i] = 0
+	_mark_dirty_around(p)
+	for d in [Vector3i(0, 1, 0), Vector3i(1, 1, 0), Vector3i(-1, 1, 0), Vector3i(0, 1, 1), Vector3i(0, 1, -1)]:
+		if Blocks.falls[vget(p + d)] == 1:
+			_falling[p + d] = true
+	var cc := Vector3i(p.x >> 1, p.y >> 1, p.z >> 1)
+	if not _batch_cells.has(cc):
+		_batch_cells[cc] = t
+	if _has_block_listeners:
+		block_changed.emit(p, t, Blocks.AIR)
+	if _first_hit(p):
+		GameState.blocks_broken += 1
+		_drops(p, t)
+	return true
+
+var _has_block_listeners := false
+
+func _flush_batch_signals() -> void:
+	for cc: Vector3i in _batch_cells:
+		cell_changed.emit(cc, _batch_cells[cc], Blocks.AIR)
+		if _cell_watch.has(cc):
+			var list: Array = _cell_watch[cc]
+			_cell_watch.erase(cc)
+			for cb: Callable in list:
+				if cb.is_valid():
+					cb.call()
+	_batch_cells.clear()
+
 ## 连锁崩塌：相邻的同类方块在 0.06 秒后依次崩塌，像多米诺骨牌
 func _chain_from(p: Vector3i, t: int) -> void:
 	get_tree().create_timer(0.06).timeout.connect(func() -> void:
@@ -736,6 +774,7 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 	var reach := radius * 1.45 if brittle else radius * 1.32 + VOXEL * 1.5
 	r = int(ceil(reach / VOXEL)) + 1
 	var first_t := Blocks.ROCK
+	_has_block_listeners = block_changed.get_connections().size() > 0
 	var frag := {}     # 种子序号 -> 这块碎片里被拆下来的体素（之后整块崩飞）
 	_crack_noise.seed = _rng.randi()
 	# 只遍历球内的体素（按行算出 x 的范围），直接读数组——大坑一次几千个体素，这里要快
@@ -790,7 +829,7 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 						if not inside and kind == Blocks.Frag.EARTH and dist <= edge + VOXEL * 1.5:
 							# 震松的一圈：零星掉渣
 							inside = _rng.randf() < 0.12
-				if inside and vbreak(p, tool, power, false):
+				if inside and _vbreak_batch(p, row + x, bt, tool, power):
 					if count == 0:
 						first_t = bt
 					count += 1
@@ -801,6 +840,7 @@ func break_sphere(center: Vector3, radius: float, tool: String, power: float, di
 						(frag[seed_id] as Array).append([vc, bt])
 					elif count % 4 == 0:
 						_spawn_debris(vc, bt)
+	_flush_batch_signals()
 	var t_loop := Time.get_ticks_usec()
 	if count > 0:
 		if tool == "impact":
@@ -868,13 +908,29 @@ const DETACH_LIMIT := 900
 ## 检查被破坏位置周围：和大地失去连接、又足够小的一团方块会变成掉落的碎块。
 ## 连到打不坏的方块（合金、金属……）、或者一团超过 DETACH_LIMIT 格，都算“有支撑”。
 func detach_floating(around: Array[Vector3i]) -> void:
+	# 留到下一帧再算：破坏这一帧已经够忙了，断开的碎块晚一帧掉下来看不出来
+	_pending_detach.append_array(around)
+
+var _pending_detach: Array[Vector3i] = []
+
+func _process_detach() -> void:
+	if _pending_detach.is_empty():
+		return
+	var around := _pending_detach
+	_pending_detach = []
+	_init_det()
 	var checked := {}
+	var sx := size.x
+	var sxy := size.x * size.y
 	for p in around:
 		for dd in DIRS:
 			var q: Vector3i = p + dd
-			if checked.has(q) or not _detachable(vget(q)):
+			if not vin(q):
 				continue
-			var comp := _component(q, checked)
+			var qi := q.x + sx * q.y + sxy * q.z
+			if checked.has(qi) or _det[data[qi]] == 0:
+				continue
+			var comp := _component_i(qi, checked)
 			if comp.is_empty():
 				continue
 			_spawn_chunk(comp)
@@ -883,49 +939,95 @@ func detach_floating(around: Array[Vector3i]) -> void:
 func _detachable(t: int) -> bool:
 	return t != Blocks.AIR and t != Blocks.FIRE and Blocks.falls[t] == 0 and (Blocks.impact[t] >= 0.0 or Blocks.drill[t] == 1)
 
+var _det := PackedByteArray()
+func _init_det() -> void:
+	if _det.is_empty():
+		_det.resize(256)
+		for t in Blocks.COUNT:
+			_det[t] = 1 if _detachable(t) else 0
+
 ## 从 start 出发找连通块；有支撑返回空数组。
 ## “支撑”要够结实：一大块东西只靠一两根细木头连着固定的方块，也会被压塌（ANCHOR_WEIGHT 个体素 / 每个接触面）
+## 用整数下标做广度搜索（不用 Vector3i 和函数调用），大破坏时快很多
 const ANCHOR_WEIGHT := 90
 
-func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
-	var out: Array[Vector3i] = []
-	var queue: Array[Vector3i] = [start]
-	var seen := {start: true}
+## 访问标记：整个世界一张 int 表，每次搜索换一个“代号”，不用每次清空，也不用字典
+var _visit := PackedInt32Array()
+var _visit_gen := 0
+
+func _component_i(start: int, checked: Dictionary) -> Array[Vector3i]:
+	var sx := size.x
+	var sy := size.y
+	var sz := size.z
+	var sxy := sx * sy
+	if _visit.size() != data.size():
+		_visit.resize(data.size())
+		_visit.fill(0)
+		_visit_gen = 0
+	_visit_gen += 1
+	var gen := _visit_gen
+	var out := PackedInt32Array()
+	var queue := PackedInt32Array([start])
+	_visit[start] = gen
 	var anchors := 0
 	var supported := false
-	if not _detachable(vget(start)):
-		return out
-	while not queue.is_empty():
-		var q: Vector3i = queue.pop_back()
+	# 先进先出（真正的广度优先）：从坑边往外一圈圈搜，搜过的一大片都会记成“有支撑”，
+	# 坑边其他起点基本都落在里面，不用再各自搜一遍
+	var head := 0
+	while head < queue.size():
+		var q: int = queue[head]
+		head += 1
 		out.append(q)
-		if out.size() > DETACH_LIMIT or q.y <= 0:
+		var x := q % sx
+		var y := (q / sx) % sy
+		var z := q / sxy
+		if out.size() > DETACH_LIMIT or y <= 0:
 			supported = true
 			break
-		for dd in DIRS:
-			var n: Vector3i = q + dd
-			if seen.has(n):
+		for k in 6:
+			var n := -1
+			match k:
+				0: n = q + 1 if x < sx - 1 else -1
+				1: n = q - 1 if x > 0 else -1
+				2: n = q + sx if y < sy - 1 else -1
+				3: n = q - sx
+				4: n = q + sxy if z < sz - 1 else -1
+				5: n = q - sxy if z > 0 else -1
+			if n < 0 or _visit[n] == gen:
 				continue
-			var nt := vget(n)
-			if nt == Blocks.AIR:
+			var nt: int = data[n]
+			if nt == 0:
 				continue
-			if not _detachable(nt):
+			if _det[nt] == 0:
 				anchors += 1
+				# 接触到的固定方块已经多到“无论这团多大都撑得住”：不用再搜了
+				if anchors * ANCHOR_WEIGHT > DETACH_LIMIT:
+					supported = true
+					break
 				continue
-			# 连到了前面已经确认“有支撑”的那一大团：这团也有支撑，不用再搜（大破坏时省掉成千上万次查询）
+			# 连到了前面已经确认“有支撑”的那一大团：这团也有支撑，不用再搜
 			if checked.has(n):
 				supported = true
 				break
-			seen[n] = true
+			_visit[n] = gen
 			queue.append(n)
 		if supported:
 			break
 	if supported or anchors * ANCHOR_WEIGHT >= out.size():
-		for q in seen:
-			checked[q] = true
+		# 有支撑：这次搜过的都记成“有支撑”（只记已出队的 + 队列里的，够用了）
+		for qi in range(queue.size()):
+			checked[queue[qi]] = true
 		return []
+	var res: Array[Vector3i] = []
 	for q in out:
 		checked[q] = true
-	return out
+		res.append(Vector3i(q % sx, (q / sx) % sy, q / sxy))
+	return res
+
+## （兼容旧调用）
+func _component(start: Vector3i, checked: Dictionary) -> Array[Vector3i]:
+	_init_det()
+	return _component_i(start.x + size.x * start.y + size.x * size.y * start.z, checked)
 
 func _spawn_chunk(cells: Array[Vector3i]) -> void:
 	var sum := Vector3.ZERO
@@ -1236,6 +1338,9 @@ static func _shrink_curve() -> Curve:
 # ---------------------------------------------------------------- 更新
 
 func _process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	_process_detach()
+	var t1 := Time.get_ticks_usec()
 	if not _falling.is_empty():
 		_fall_timer += delta
 		if _fall_timer >= FALL_STEP:
@@ -1243,9 +1348,17 @@ func _process(delta: float) -> void:
 			_step_falling()
 	if not _dirty.is_empty():
 		_rebuild_dirty()
+	var t2 := Time.get_ticks_usec()
 	_flush_debris()
+	if PROFILE:
+		prof_frame[0] += t1 - t0
+		prof_frame[1] += t2 - t1
+		prof_frame[2] += Time.get_ticks_usec() - t2
 
-const REBUILD_BUDGET_MS := 6.0
+static var prof_frame := [0, 0, 0]
+static var prof_rb := [0, 0, 0, 0]
+
+const REBUILD_BUDGET_MS := 5.0
 
 ## 重建脏区块：按渲染组（GROUP³ 个小区块）来，离主角最近的组先重建。
 ## 每帧的预算把“合并网格 + 重建碰撞”（最贵的一步）也算进去；至少处理一个组，剩下的留到后面几帧
@@ -1264,15 +1377,23 @@ func _rebuild_dirty() -> void:
 	var t0 := Time.get_ticks_usec()
 	for i in gkeys.size():
 		var g: Vector3i = gkeys[i]
+		var ta := Time.get_ticks_usec()
 		for c: Vector3i in groups[g]:
 			_dirty.erase(c)
 			_build_chunk(c)
+		var tb := Time.get_ticks_usec()
 		if _group_needs_smooth(g):
 			_smooth_group(g)
+		var tc := Time.get_ticks_usec()
 		_commit_group(g)
+		if PROFILE:
+			prof_rb[0] += tb - ta
+			prof_rb[1] += tc - tb
+			prof_rb[2] += Time.get_ticks_usec() - tc
+			prof_rb[3] += 1
 		_gdirty.erase(g)
 		# 积压多（大破坏、重构波）时多给一点预算，让地形尽快跟上，不留空洞
-		var budget := REBUILD_BUDGET_MS * (1.8 if gkeys.size() > 6 else 1.0)
+		var budget := REBUILD_BUDGET_MS * (1.4 if gkeys.size() > 8 else 1.0)
 		if (Time.get_ticks_usec() - t0) > budget * 1000.0:
 			break
 
@@ -1497,8 +1618,44 @@ func _smooth_group(g: Vector3i) -> void:
 func _smooth_xf(g: Vector3i) -> Transform3D:
 	return Transform3D(Basis.from_scale(Vector3.ONE * VOXEL), (Vector3(g * GSIZE) + Vector3(0.5, 0.5, 0.5)) * VOXEL)
 
-## Voxel Tools：原始数据从 lo-2 开始（Transvoxel 前边框 1 + 模糊 1），ZXY 顺序
+## Voxel Tools 快速路径：按行整段拷贝方块类型（几百次切片），剩下的全交给 VoxelBuffer 的 C++ 运算
 func _smooth_group_vt(lo: Vector3i, n: Vector3i) -> Dictionary:
+	var rs := n + Vector3i(4, 4, 4)
+	var ro := lo - Vector3i(2, 2, 2)
+	var bytes := PackedByteArray()
+	var zero_row := PackedByteArray()
+	zero_row.resize(rs.x)
+	var sx := size.x
+	var sxy := size.x * size.y
+	var x0 := maxi(ro.x, 0)
+	var x1 := mini(ro.x + rs.x, sx)
+	var pre := PackedByteArray()
+	pre.resize(maxi(x0 - ro.x, 0))
+	var post := PackedByteArray()
+	post.resize(maxi(ro.x + rs.x - x1, 0))
+	var any := false
+	for z in rs.z:
+		var wz := ro.z + z
+		for y in rs.y:
+			var wy := ro.y + y
+			if wz < 0 or wz >= size.z or wy < 0 or wy >= size.y or x1 <= x0:
+				bytes.append_array(zero_row)
+				continue
+			var row := sxy * wz + sx * wy
+			var sl := data.slice(row + x0, row + x1)
+			if not any and sl.count(0) != sl.size():
+				any = true
+			bytes.append_array(pre)
+			bytes.append_array(sl)
+			bytes.append_array(post)
+	if not any:
+		return {}
+	if OS.has_environment("CUBE7_SLOW_TERRAIN"):
+		return _smooth_group_vt_slow(lo, n)
+	return TerrainMesher.build_vt_fast(bytes, rs, n)
+
+## （旧的逐体素版本，保留做对照）
+func _smooth_group_vt_slow(lo: Vector3i, n: Vector3i) -> Dictionary:
 	var bs := n + Vector3i(2, 2, 2)
 	var rs := bs + Vector3i(2, 2, 2)
 	var ro := lo - Vector3i(2, 2, 2)

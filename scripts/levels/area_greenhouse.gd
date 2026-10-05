@@ -28,7 +28,7 @@ const BLOBS := [
 	[100, 26, 13, G + 2],   # F 中枢塔台地
 	[94, 42, 7, G + 2],     # F 洞口前（和 E 高台下的洞穴相接）
 	[104, 44, 6, G + 2],    # F 光桥起点
-	[104, 80, 7, G + 10],   # 终点浮岛
+	[104, 81, 11, G + 10],  # 终点浮岛（锈根兽的场地）
 	[10, 52, 10, G],        # 古树（西北角）
 	[34, 110, 12, G],       # 锈蚀营地（南边的小岛）
 	[26, 104, 6, G],
@@ -1062,7 +1062,7 @@ func _logic() -> void:
 	# E
 	zone(Checkpoint, Vector3i(83, G + 6, 51), Vector3i(86, G + 9, 53))
 	talk(Vector3i(87, G + 6, 48), Vector3i(96, G + 10, 56), [
-		"这片深色的松土……下面好像是空的。停下来按住{ability}往下钻试试。普通地面是钻不下去的，只有松土可以。",
+		"这片深色的松土……下面好像是空的。停下来按住{ability}往下钻试试——钻头站着不动就会往下钻，松土钻得最快。",
 	])
 	_fragment("gh_3", Vector3i(89, G + 2, 53), {"log_text": "艾拉·林，最后一条：引擎已经启动。对不起，没来得及问你们愿不愿意。等你们醒来的时候，我会在这里。"})
 	# F
@@ -1076,8 +1076,8 @@ func _logic() -> void:
 	socket.setup(world, SOCKET)
 	socket.filled.connect(_build_bridge)
 	coin_line(Vector3i(96, G + 2, 31), Vector3i(94, G + 2, 26), 3)
-	# 终点
-	zone(Goal, Vector3i(100, G + 10, 76), Vector3i(108, G + 14, 86))
+	# 终点浮岛：先打倒锈根兽，终点才出现
+	_setup_hulk()
 	# 解谜区域：旋律淡出，帮助专注
 	zone(MusicZone, Vector3i(42, G - 4, 58), Vector3i(62, G + 6, 88), {"state": "puzzle"})
 	zone(MusicZone, Vector3i(84, G + 2, 14), Vector3i(106, G + 8, 34), {"state": "puzzle"})
@@ -1261,3 +1261,113 @@ func _build_bridge(instant := false) -> void:
 				world.set_block(p, Blocks.CRYSTAL)
 			else:
 				world.set_ramp(p, Blocks.CRYSTAL, shape))
+
+
+# ================================================================ Boss：锈根兽（终点浮岛）
+
+const HULK_C := Vector3i(104, G + 10, 83)
+## 场地边上的三处落石（承重木架 + 圆石），相对场地中心的格偏移
+const HULK_TRAPS := [Vector3i(-6, 0, -1), Vector3i(5, 0, -4), Vector3i(1, 0, 6)]
+var hulk: RootHulk
+var hulk_done := false
+var _trap_cells: Array = []     ## 每处落石：[[体素, 类型], ...]（重构用）
+var _trap_rebuilding := {}
+
+func _setup_hulk() -> void:
+	for off: Vector3i in HULK_TRAPS:
+		_trap_cells.append(_build_trap(HULK_C + off))
+	if SaveGame.flag("gh_boss"):
+		hulk_done = true
+		_make_hulk_goal()
+		return
+	hulk = RootHulk.new()
+	hulk.name = "RootHulk"
+	add_child(hulk)
+	hulk.global_position = world.voxel_top(HULK_C + Vector3i.DOWN) + Vector3.UP * 0.05
+	hulk.rotation.y = PI
+	hulk.defeated.connect(_on_hulk_defeated)
+	hulk.hp_changed.connect(func(hp: int) -> void:
+		if hp == 2:
+			GameState.say("砸中了！……它又站起来了。还有两处落石——扫描看看，木架在哪。")
+		elif hp == 1:
+			GameState.say("最后一下！"))
+	var trig := zone(Zone, HULK_C + Vector3i(-10, 0, -10), HULK_C + Vector3i(10, 6, 9))
+	trig.player_entered.connect(func() -> void:
+		if not is_instance_valid(hulk) or hulk.active or hulk_done:
+			return
+		if not ChapterKey.unseal(self, hulk, "greenhouse"):
+			return
+		hulk.start()
+		Music.play_area("boss")
+		Music.set_override("explore")
+		GameState.set_objective(10, "打倒锈根兽（撞断木架，让落石砸它）", hulk.global_position)
+		GameState.say("锈根兽！它背着一身岩甲，撞不动也钻不动……场地边上有三根木架托着大石头。引它过去，撞断木架——让石头砸它！"))
+
+## 承重木架（2×2 体素粗、1.5 米高）+ 顶上的圆石。返回所有体素，落石用掉以后照着重构回来
+func _build_trap(cell: Vector3i) -> Array:
+	var out: Array = []
+	var top := surface_y(cell.x, cell.z)
+	if top < 0:
+		return out
+	var b := Vector3i(cell.x * 2, top * 2, cell.z * 2)
+	for y in range(0, 6):
+		for o in [Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(0, 0, 1), Vector3i(1, 0, 1)]:
+			var v: Vector3i = b + Vector3i(0, y, 0) + o
+			world.vset(v, Blocks.SUPPORT)
+			out.append([v, Blocks.SUPPORT])
+	var cc := Vector3(b.x + 1.0, b.y + 6.0 + 3.2, b.z + 1.0)
+	for z in range(-4, 5):
+		for y in range(-4, 5):
+			for x in range(-4, 5):
+				if Vector3(x, y, z).length() <= 3.6:
+					var v2 := Vector3i((cc + Vector3(x, y, z)).floor())
+					world.vset(v2, Blocks.ROCK)
+					out.append([v2, Blocks.ROCK])
+	return out
+
+func _process(delta: float) -> void:
+	_process_hulk(delta)
+
+func _process_hulk(_delta: float) -> void:
+	if not is_instance_valid(hulk) or not hulk.active or hulk_done:
+		return
+	# 落石用掉了：5 秒后木架和石头一格格重构回来（石头从地上飞回去）
+	for i in _trap_cells.size():
+		var cells: Array = _trap_cells[i]
+		if cells.is_empty() or _trap_rebuilding.has(i):
+			continue
+		var top_rock: Vector3i = cells[cells.size() - 1][0]
+		var pillar: Vector3i = cells[0][0]
+		if world.vget(pillar) != Blocks.SUPPORT or world.vget(cells[24][0]) != Blocks.ROCK:
+			_trap_rebuilding[i] = true
+			get_tree().create_timer(5.0).timeout.connect(func() -> void: _rebuild_trap(i))
+
+func _rebuild_trap(i: int) -> void:
+	if hulk_done:
+		return
+	var rb := VoxelRebuilder.new()
+	rb.world = world
+	world.add_child(rb)
+	var cells: Array = _trap_cells[i]
+	var k := 0
+	for e in cells:
+		var v: Vector3i = e[0]
+		if world.vget(v) != Blocks.AIR:
+			continue
+		var to := world.vcenter(v)
+		rb.add([e], to, to + Vector3(randf_range(-2, 2), -3.0, randf_range(-2, 2)), k * 0.004, 0.6, 0.25)
+		k += 1
+	rb.finished.connect(func() -> void: _trap_rebuilding.erase(i))
+	GameState.say("……场地在自己重构落石。真是个固执的地方。")
+
+func _on_hulk_defeated(_e: Node) -> void:
+	hulk_done = true
+	SaveGame.set_flag("gh_boss")
+	Music.play_area("gh")
+	Music.set_override("")
+	GameState.say("锈根兽趴下了……岩甲底下是一台老园艺机器人。它身上的锈在剥落——等星球重构好，它会回温室去种萝卜的。")
+	_make_hulk_goal()
+
+func _make_hulk_goal() -> void:
+	zone(Goal, Vector3i(100, G + 10, 76), Vector3i(108, G + 14, 86))
+	GameState.set_objective(11, "碰一下终点浮岛上的引擎节点", _v(Vector3i(104, G + 11, 81)))

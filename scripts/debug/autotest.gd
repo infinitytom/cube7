@@ -272,7 +272,8 @@ func _enemy_tests() -> void:
 	await wait(1.5)
 	P.debug_input = Vector2.ZERO
 	check(not is_instance_valid(e), "翻倒后滚球碰一下就击破")
-	# d. 气泡气浪把它推开、掀翻
+	# d. 气泡气浪把它推开、掀翻（先把还在滚的球挪开，别一出生就被撞碎）
+	await tp(Vector3i(36, 4, 26), Vector3.ZERO, MorphBall.BUBBLE)
 	e = await _enemy(Vector3i(44, 3, 26), PI / 2.0)
 	await tp(Vector3i(40, 4, 26), Vector3.ZERO, MorphBall.BUBBLE)
 	await wait(0.3)
@@ -456,6 +457,8 @@ func _chunk_test() -> void:
 	for d in [Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(0, 1, 0), Vector3i(1, 1, 0), Vector3i(0, 0, 1), Vector3i(1, 0, 1), Vector3i(0, 1, 1), Vector3i(1, 1, 1)]:
 		fine.append(Vector3i(25, 5, 45) * VoxelWorld.CELL + d)
 	W.detach_floating(fine)
+	await get_tree().process_frame   # 断开检测留到下一帧
+	await get_tree().process_frame
 	var chunks := W.find_children("*", "VoxelChunk", false, false)
 	var n := 0
 	for c in W.get_children():

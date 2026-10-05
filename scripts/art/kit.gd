@@ -14,9 +14,32 @@ static func scene(path: String) -> PackedScene:
 	return _scenes[path]
 
 ## 实例化一个模型（Node3D）
+static var _tweaked := {}
+
 static func model(path: String) -> Node3D:
 	var s := scene(path)
-	return s.instantiate() as Node3D if s else Node3D.new()
+	var n: Node3D = s.instantiate() as Node3D if s else Node3D.new()
+	if not _tweaked.has(path):
+		_tweaked[path] = true
+		_matte(n)
+	return n
+
+## 现成模型的材质统一成“哑光”：和地形同一种质感（不再像塑料玩具那样反光）
+## 材质是共享资源，每个模型改一次就够了
+static func _matte(n: Node) -> void:
+	for c in n.find_children("*", "MeshInstance3D", true, false):
+		var mi := c as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var m := mi.get_active_material(i) as BaseMaterial3D
+			if m == null:
+				continue
+			m.roughness = maxf(m.roughness, 0.82)
+			m.metallic = minf(m.metallic, 0.15)
+			m.metallic_specular = 0.25
+			if not m.emission_enabled:
+				m.albedo_color = m.albedo_color.darkened(0.06)
 
 ## 取模型里第一个网格（用于 MultiMesh 批量摆放、金币等）
 static func mesh(path: String) -> Mesh:

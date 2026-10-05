@@ -3,11 +3,11 @@
 //   · 背光面不发黑，带一点冷色的天光
 //   · 迎光的轮廓上一道暖色边缘光，形体更“圆”
 //   · 小而柔的高光，像涂了一层清漆的玩具
-uniform float toon_soft = 0.55;
+uniform float toon_soft = 0.85;
 uniform vec3 shadow_tint : source_color = vec3(0.55, 0.64, 1.0);
-uniform float shadow_fill = 0.16;
-uniform float rim_strength = 0.22;
-uniform float gloss = 0.12;
+uniform float shadow_fill = 0.10;
+uniform float rim_strength = 0.08;
+uniform float gloss = 0.03;
 
 void light() {
 	float ndl = dot(NORMAL, LIGHT);

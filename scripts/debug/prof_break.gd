@@ -62,6 +62,8 @@ func _run() -> void:
 		_bn += nb
 		GameState.hitstop(0.05)
 		await get_tree().process_frame
+	print("  rebuild chunks/smooth/commit ms, groups: ", VoxelWorld.prof_rb)
+	print("  frame detach/rebuild/debris ms: ", VoxelWorld.prof_frame.map(func(v: int) -> float: return v / 1000.0))
 	print("  loop/fragments/detach ms: ", VoxelWorld.prof_acc.map(func(v: int) -> float: return v / 1000.0))
 	print("break loop took %.1fms (break_sphere %.1fms for %d voxels)" % [(Time.get_ticks_usec() - t0) / 1000.0, _bt, _bn])
 	_report("during breaks")
@@ -69,6 +71,13 @@ func _run() -> void:
 	_report("0-1s after")
 	await wait(2.0)
 	_report("1-3s after")
+	# 真实一点的节奏：每 0.35 秒一次普通冲撞大小的坑
+	_times.clear()
+	for i in 8:
+		var p2 := c + Vector3(cos(i * 1.3), 0, sin(i * 1.3)) * 4.0 + Vector3.DOWN * 0.5
+		W.break_sphere(p2, 1.1, "impact", 12.0, Vector3.DOWN)
+		await wait(0.35)
+	_report("ram-like impacts")
 	# 打怪
 	var es := get_tree().get_nodes_in_group("enemy")
 	var k := 0

@@ -62,13 +62,16 @@ vec3 terrain_albedo(vec3 n) {
 		float fine = vnoise(v_wpos * 14.0 + vec3(1.3));
 		top *= 0.9 + 0.12 * stroke + 0.06 * fine;
 		top = mix(top, top * vec3(0.78, 0.9, 0.72), smoothstep(0.62, 0.75, stroke) * 0.5);
+		// 细碎的深浅草点（一根根草的感觉）
+		float fleck = vnoise(vec3(v_wpos.x * 38.0, v_wpos.y * 10.0, v_wpos.z * 38.0));
+		top *= 0.84 + 0.26 * fleck;
 		vec3 dirt = dirt_color * (0.92 + 0.1 * n2) * vec3(0.9, 0.86, 0.84);
 		float lip = smoothstep(0.22, 0.55, up + 0.22 * (vnoise(v_wpos * vec3(3.0, 0.5, 3.0)) - 0.5));
 		col = mix(col, mix(dirt, top, lip), grass);
 	}
 	// 树冠：一团一团的体积感，顶上被阳光晒得更亮更暖
 	if (foliage > 0.01) {
-		vec3 f = col * (0.86 + 0.24 * vnoise(v_wpos * 1.6));
+		vec3 f = col * (0.8 + 0.3 * vnoise(v_wpos * 1.6)) * (0.85 + 0.2 * vnoise(v_wpos * 9.0));
 		f = mix(f, f * vec3(1.18, 1.16, 0.85), smoothstep(0.1, 0.9, up) * 0.45);
 		col = mix(col, f, foliage);
 	}
@@ -76,7 +79,7 @@ vec3 terrain_albedo(vec3 n) {
 	col *= mix(1.0, 0.95 + 0.06 * sin(v_wpos.x * 2.1 + v_wpos.z * 0.8 + n2 * 4.0) * smoothstep(0.4, 0.9, up), sand);
 	// 整体稍微收一点饱和度，避免“荧光绿”
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
-	col = mix(vec3(lum), col, 0.9);
+	col = mix(vec3(lum), col, 0.82) * 0.86;
 	// 矿 / 晶洞：零星的亮色晶点
 	if (v_spark > 0.01) {
 		float g = step(0.86, vnoise(v_wpos * 7.0));
@@ -85,12 +88,31 @@ vec3 terrain_albedo(vec3 n) {
 	return col;
 }
 
+// 每种材质不同的表面细节：草是竖向的细密草叶，岩石是粗颗粒和裂面，泥土是小土粒，砂是风纹
+vec3 terrain_normal(vec3 n) {
+	float grass = v_fam.x * smoothstep(0.3, 0.8, n.y);
+	float foliage = v_fam.y;
+	float sand = v_fam.z;
+	float rock = clamp(1.0 - v_fam.x - v_fam.y - v_fam.z, 0.0, 1.0);
+	vec3 r = n;
+	r = mix(r, detail_normal(n, v_wpos, 2.2, 0.9, vec3(1.0, 0.6, 1.0)), rock);
+	r = mix(r, detail_normal(r, v_wpos, 9.0, 0.35, vec3(1.0)), rock * 0.8 + (1.0 - grass) * 0.3);
+	r = mix(r, detail_normal(n, v_wpos, 16.0, 1.1, vec3(1.0, 0.25, 1.0)), grass);
+	r = mix(r, detail_normal(n, v_wpos, 4.5, 1.4, vec3(1.0)), foliage);
+	r = mix(r, detail_normal(n, v_wpos, 1.6, 0.4, vec3(1.0, 0.4, 3.0)), sand);
+	return normalize(r);
+}
+
 void fragment() {
 	if (occluder_cut(v_wpos, CAMERA_POSITION_WORLD, FRAGCOORD.xy)) discard;
 	vec3 n = normalize(v_wnorm);
-	ALBEDO = terrain_albedo(n);
+	vec3 dn = terrain_normal(n);
+	// 细节法线带出来的明暗也压进颜色里一点（缝里更暗），质感更“实”
+	float cav = clamp(dot(dn, n), 0.0, 1.0);
+	ALBEDO = terrain_albedo(n) * mix(0.7, 1.0, cav * cav);
+	NORMAL = normalize((VIEW_MATRIX * vec4(dn, 0.0)).xyz);
 	AO = COLOR.a;
-	AO_LIGHT_AFFECT = 0.55;
-	ROUGHNESS = mix(0.75, 0.95, clamp(v_fam.y + v_fam.x * 0.6, 0.0, 1.0));
-	SPECULAR = 0.3;
+	AO_LIGHT_AFFECT = 0.7;
+	ROUGHNESS = 0.92;
+	SPECULAR = 0.2;
 }

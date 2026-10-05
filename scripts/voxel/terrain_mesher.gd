@@ -210,3 +210,105 @@ static func grid_surface(mesh: ArrayMesh, r: Dictionary, voxel: float, origin: V
 	var off: Vector3 = r.get("offset", Vector3.ZERO)
 	var xf := Transform3D(Basis.from_scale(Vector3.ONE * voxel), origin + off * voxel)
 	add_surface(mesh, r, xf, mat if mat else TerrainPalette.material())
+
+
+# ---------------------------------------------------------------- 快速路径（破坏时用：几乎全在 C++ 里做）
+## types_xyz：原始方块类型（XYZ 顺序，x 最快），尺寸 rs = n + 4（前后各留 2 格：Transvoxel 边框 1 + 模糊 1）
+## 用 8 位 SDF 做整数运算：sdf = 30 - 33·原始 - 3×3×3 邻域和
+##   等价于 60 × (0.5 - 0.55·原始 - 0.45·模糊)，和慢速路径的曲面完全一样，但不用逐体素循环
+static var _smooth_map := PackedInt32Array()
+static var _slot_map := PackedInt32Array()
+
+static func build_vt_fast(types_xyz: PackedByteArray, rs: Vector3i, n: Vector3i) -> Dictionary:
+	if _mesher == null:
+		_mesher = ClassDB.instantiate("VoxelMesherTransvoxel")
+		_mesher.set("texturing_mode", TEX_SINGLE)
+		_mesher.set("textures_ignore_air_voxels", true)
+	if _smooth_map.is_empty():
+		_smooth_map.resize(256)
+		_slot_map.resize(256)
+		var tab := TerrainPalette.table()
+		for t in 256:
+			_smooth_map[t] = 1 if t < Blocks.COUNT and Blocks.smooth[t] == 1 else 0
+			_slot_map[t] = tab[t] if t < Blocks.COUNT else 0
+	var C_TYPE := 0
+	# 1) 类型：字节按 XYZ 排，当成 (ny, nx, nz) 的 ZXY 缓冲区读进来，再旋转 + 镜像成正确的朝向
+	var t: Object = ClassDB.instantiate("VoxelBuffer")
+	t.call("create", rs.y, rs.x, rs.z)
+	t.call("set_channel_depth", C_TYPE, D8)
+	t.call("set_channel_from_byte_array", C_TYPE, types_xyz)
+	t.call("rotate_90", 2, 3)
+	t.call("mirror", 0)
+	# 2) 原始填充 D（0/1）
+	var d: Object = _clone8(t, rs, C_TYPE)
+	d.call("remap_values", C_TYPE, _smooth_map)
+	var raw: Object = ClassDB.instantiate("VoxelBuffer")
+	raw.call("create", rs.x, rs.y, rs.z)
+	raw.call("set_channel_depth", C_SDF, D8)
+	raw.call("set_channel_from_byte_array", C_SDF, d.call("get_channel_as_byte_array", C_TYPE))
+	# 3) 3×3×3 邻域和 S（整数，最大 27，8 位够用）
+	var acc: Object = raw
+	for axis in 3:
+		var e := Vector3i.ZERO
+		e[axis] = 1
+		var sum: Object = _clone8(acc, rs, C_SDF)
+		var a: Object = _clone8(acc, rs, C_SDF)
+		a.call("copy_channel_from_area", acc, e, rs, Vector3i.ZERO, C_SDF)
+		sum.call("op_add_buffer_f", a, C_SDF)
+		var b2: Object = _clone8(acc, rs, C_SDF)
+		b2.call("copy_channel_from_area", acc, Vector3i.ZERO, rs - e, e, C_SDF)
+		sum.call("op_add_buffer_f", b2, C_SDF)
+		acc = sum
+	# 4) sdf = 30 - 33·D - S（一个单位 = 8 位 SDF 的一级）
+	var unit: float = _unit8()
+	var sdf: Object = _clone8(raw, rs, C_SDF)
+	sdf.call("op_mul_value_f", -33.0, C_SDF)
+	acc.call("op_mul_value_f", -1.0, C_SDF)
+	sdf.call("op_add_buffer_f", acc, C_SDF)
+	var c30: Object = ClassDB.instantiate("VoxelBuffer")
+	c30.call("create", rs.x, rs.y, rs.z)
+	c30.call("set_channel_depth", C_SDF, D8)
+	c30.call("fill_f", 30.0 * unit, C_SDF)
+	sdf.call("op_add_buffer_f", c30, C_SDF)
+	# 5) 裁掉模糊边框 → Transvoxel 输入；材质槽位
+	var bs := n + Vector3i(2, 2, 2)
+	var buf: Object = ClassDB.instantiate("VoxelBuffer")
+	buf.call("create", bs.x, bs.y, bs.z)
+	buf.call("set_channel_depth", C_SDF, D8)
+	buf.call("copy_channel_from_area", sdf, Vector3i.ONE, Vector3i.ONE + bs, Vector3i.ZERO, C_SDF)
+	var sl: Object = _clone8(t, rs, C_TYPE)
+	sl.call("remap_values", C_TYPE, _slot_map)
+	var slc: Object = ClassDB.instantiate("VoxelBuffer")
+	slc.call("create", bs.x, bs.y, bs.z)
+	slc.call("set_channel_depth", C_TYPE, D8)
+	slc.call("copy_channel_from_area", sl, Vector3i.ONE, Vector3i.ONE + bs, Vector3i.ZERO, C_TYPE)
+	buf.call("set_channel_depth", C_INDICES, D8)
+	buf.call("set_channel_from_byte_array", C_INDICES, slc.call("get_channel_as_byte_array", C_TYPE))
+	var mesh: Mesh = _mesher.call("build_mesh", buf, [], {})
+	if mesh == null or mesh.get_surface_count() == 0:
+		return {}
+	var arr := mesh.surface_get_arrays(0)
+	var c1 = arr[Mesh.ARRAY_CUSTOM1]
+	if c1 == null:
+		_has_vt = 0
+		return {"fallback": true}
+	return {"verts": arr[Mesh.ARRAY_VERTEX], "normals": arr[Mesh.ARRAY_NORMAL], "custom1": c1,
+		"indices": arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array(), "colors": PackedColorArray()}
+
+static func _clone8(src: Object, size: Vector3i, ch: int) -> Object:
+	var b: Object = ClassDB.instantiate("VoxelBuffer")
+	b.call("create", size.x, size.y, size.z)
+	b.call("set_channel_depth", ch, D8)
+	b.call("copy_channel_from", src, ch)
+	return b
+
+## 8 位 SDF 一级代表多少（不同版本可能不同，运行时量一下）
+static var _unit := -1.0
+static func _unit8() -> float:
+	if _unit < 0.0:
+		var b: Object = ClassDB.instantiate("VoxelBuffer")
+		b.call("create", 1, 1, 1)
+		b.call("set_channel_depth", C_SDF, D8)
+		b.call("set_channel_from_byte_array", C_SDF, PackedByteArray([1]))
+		_unit = float(b.call("get_voxel_f", 0, 0, 0, C_SDF))
+	return _unit

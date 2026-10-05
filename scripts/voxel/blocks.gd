@@ -23,7 +23,7 @@ enum Render { NONE, OPAQUE, GLASS, GLOW }
 ## item：破坏后留在场上的“可用物件”（只有它会保留）
 const DEFS := {
 	BEDROCK: {"name": "外星合金", "color": Color("4a4f63"), "render": Render.OPAQUE},
-	GRASS: {"name": "草地", "color": Color("7cbd4a"), "drill": true, "burn": 0.8, "burn_to": DIRT, "catch": 0.08, "impact": 10.5},
+	GRASS: {"name": "草地", "color": Color("6fae48"), "drill": true, "burn": 0.8, "burn_to": DIRT, "catch": 0.08, "impact": 10.5},
 	DIRT: {"name": "泥土", "color": Color("a86a42"), "drill": true, "impact": 10.5},
 	SAND: {"name": "砂", "color": Color("e2c58f"), "impact": 2.5, "drill": true, "falls": true, "soft": true},
 	GLASS: {"name": "玻璃", "color": Color("b9e3f5"), "impact": 7.5, "drill": true, "render": Render.GLASS},
@@ -43,7 +43,7 @@ const DEFS := {
 	GOAL: {"name": "终点信标", "color": Color("ffd84d"), "render": Render.GLOW},
 	PLATE: {"name": "压力板", "color": Color("e38b3a")},
 	WOOD: {"name": "木头", "color": Color("9c6a45"), "drill": true, "burn": 5.0, "catch": 0.5, "impact": 11.0},
-	LEAVES: {"name": "树叶", "color": Color("5aa548"), "impact": 1.5, "drill": true, "burn": 1.2},
+	LEAVES: {"name": "树叶", "color": Color("4f9442"), "impact": 1.5, "drill": true, "burn": 1.2},
 	GEODE: {"name": "晶洞", "color": Color("8a63d2"), "drill": true, "item": "crystal", "energy": 2, "impact": 10.5},
 	HULL: {"name": "飞船外壳", "color": Color("e9edf2")},
 	CLIFF: {"name": "悬崖岩", "color": Color("b9875a")},

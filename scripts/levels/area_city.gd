@@ -506,6 +506,8 @@ func _setup_boss() -> void:
 	var trig := zone(Zone, Vector3i(D_C.x - 20, GD, D_C.y - 8), Vector3i(D_C.x + 20, GD + 6, D_C.y + 22))
 	trig.player_entered.connect(func() -> void:
 		if is_instance_valid(airship) and not airship.active and not boss_done:
+			if not ChapterKey.unseal(self, airship, "city"):
+				return
 			airship.start()
 			Music.play_area("boss")
 			Music.set_override("explore")

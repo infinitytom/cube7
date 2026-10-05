@@ -611,6 +611,8 @@ func _setup_boss() -> void:
 	var trig := zone(Zone, Vector3i(C.x - 16, FLOOR, C.y - 16), Vector3i(C.x + 17, FLOOR + 5, C.y + 16))
 	trig.player_entered.connect(func() -> void:
 		if is_instance_valid(boss) and not boss.active and not boss_done:
+			if not ChapterKey.unseal(self, boss, "abyss"):
+				return
 			boss.start()
 			boss_beams[0].active = true
 			Music.play_area("boss")

@@ -30,6 +30,8 @@ func _ready() -> void:
 	Flow.chapter = 0
 	GameState.chapter = ch
 	var editor_mode := Flow.mode == "editor" or args.has("--editor")
+	# 整关自动测试不去找关键道具（关键道具有自己的测试）
+	ChapterKey.test_bypass = args.any(func(a: String) -> bool: return a.begins_with("--autotest"))
 	if editor_mode:
 		level = EditorLevel.new()
 	else:
@@ -43,6 +45,7 @@ func _ready() -> void:
 	if not editor_mode and not use_test and ch >= 1 and ch <= Chapters.count():
 		echo_ch = Chapters.LIST[ch - 1].id
 		EchoCaches.place(level, world, echo_ch)
+		ChapterKey.place(level, world, echo_ch)
 		LevelSpice.apply(level, world, echo_ch)
 	else:
 		GameState.set_echo_total(0, 0)

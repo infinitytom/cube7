@@ -81,6 +81,9 @@ var _visual_root: Node3D
 var _visuals: Array[Node3D] = []
 var _drill_bit: Node3D
 var _drilling_t := 0.0
+var _drill_down_t := 0.0
+var _drill_top := 0.0
+var _funnel := 0.0
 var _drill_fx: CPUParticles3D
 var _bit_spin := 0.0
 var _drill_down := false
@@ -556,6 +559,7 @@ func _update_ability(delta: float, f: Dictionary, dir: Vector3) -> void:
 			elif held and _ground_timer > 0.0:
 				_drill_timer -= delta
 				_drilling_t = 0.15
+				_drill_down_t = _drill_down_t + delta if dir.length() < 0.15 else 0.0
 				if _drill_timer <= 0.0:
 					_drill_timer = 0.09 if Upgrades.level("drill") == 0 else 0.06
 					_drill(dir)
@@ -802,8 +806,18 @@ func _drill(dir: Vector3) -> void:
 		return
 	var n := 0
 	if dir.length() < 0.15:
-		# 静止时向下钻：只钻得动松土/砂，普通地面钻不下去（避免把自己困在坑里）
-		n = world.break_sphere(global_position + Vector3.DOWN * 0.5, 0.62, "drill", 1.0, Vector3.DOWN, true)
+		# 静止时向下钻：所有钻得动的地面都能往下钻（挖晶洞、挖捷径）。
+		# 竖井上口顺手刮出一圈缓坡，平滑地形上钻头能自己爬出来；真卡住了还有自动脱困
+		n = world.break_sphere(global_position + Vector3.DOWN * 0.5, 0.64, "drill", 1.0, Vector3.DOWN)
+		if _drill_down_t < 0.05:
+			_drill_top = global_position.y
+			_funnel = 0.0
+		# 每往下钻 0.3 米，在半深处刮一圈漏斗壁（约 45°）：钻多深，口子就开多大，钻头自己能爬出来
+		var depth := _drill_top - global_position.y
+		if depth - _funnel >= 0.3 and depth < 4.0:
+			_funnel = depth
+			var mid := Vector3(global_position.x, _drill_top - depth * 0.5, global_position.z)
+			world.break_sphere(mid, 0.55 + depth * 0.75, "drill", 1.0, Vector3.DOWN, false, global_position.y - 0.4)
 	else:
 		# 往前钻出一条不规则的隧道：比主角宽一圈，洞壁参差不齐
 		var d := _move_dir.normalized()
@@ -1260,6 +1274,8 @@ func _update_drill_visual(delta: float) -> void:
 	if _drill_bit == null:
 		return
 	_drilling_t -= delta
+	if _drilling_t <= 0.0:
+		_drill_down_t = 0.0
 	var drilling := form == DRILL and _drilling_t > 0.0
 	var moving := Vector3(linear_velocity.x, 0, linear_velocity.z).length()
 	var target_spin := 40.0 if drilling else (moving * 3.0 + 1.5)

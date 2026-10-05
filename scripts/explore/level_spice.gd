@@ -22,7 +22,9 @@ static func apply(level: Node3D, world: VoxelWorld, chapter_id: String) -> void:
 	_avoid = _designed_points(level)
 	var cores := level.get_tree().get_nodes_in_group("scan_target")
 	# 优先给“钻头钻得动”的晶核挖洞（需要进化的那些留给后面再来）
-	var sorted: Array = cores.filter(func(c: Node) -> bool: return c is EchoCore and (c as EchoCore).locked_hint == "")
+	# 关键道具排第一：保证有一条洞穴通向它
+	var sorted: Array = cores.filter(func(c: Node) -> bool: return c is KeyRelic)
+	sorted.append_array(cores.filter(func(c: Node) -> bool: return c is EchoCore and (c as EchoCore).locked_hint == "" and not c.is_queued_for_deletion()))
 	for c in sorted:
 		if caves >= CAVES:
 			break
@@ -102,6 +104,12 @@ static func _cave_to(world: VoxelWorld, target: Vector3, rng: RandomNumberGenera
 		if OS.has_environment("CUBE7_SPICE_DBG"):
 			print("  cave: path too short ", path.size())
 		return Vector3i(-1, -1, -1)
+	# 隧道离关卡里设计过的地方（出生点、检查点……）至少 5 米：不能把它们脚下挖空
+	for c in path:
+		var cw := world.to_global(c * VoxelWorld.VOXEL)
+		for av3 in _avoid:
+			if av3.distance_to(cw) < 5.0:
+				return Vector3i(-1, -1, -1)
 	# 整条隧道（含洞壁外 2 体素）只能碰到普通地层或空气
 	for c in path:
 		for z in range(-4, 5, 2):

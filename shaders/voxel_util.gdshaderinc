@@ -41,3 +41,19 @@ bool occluder_cut(vec3 wpos, vec3 cam, vec2 fragcoord) {
 	return bayer4(fragcoord) < k * 0.85;
 }
 
+
+
+// ---------------------------------------------------------------- 表面细节（程序化法线扰动）
+// 用噪声当“高度”，算它沿表面的梯度，把法线掰一点——不需要贴图也有颗粒、草叶、岩石裂纹的质感
+float fbm2(vec3 p) {
+	return vnoise(p) * 0.65 + vnoise(p * 2.13 + vec3(5.2)) * 0.35;
+}
+
+vec3 detail_normal(vec3 n, vec3 wp, float freq, float strength, vec3 stretch) {
+	vec3 q = wp * freq * stretch;
+	float e = 0.35;
+	float h0 = fbm2(q);
+	vec3 g = vec3(fbm2(q + vec3(e, 0.0, 0.0)) - h0, fbm2(q + vec3(0.0, e, 0.0)) - h0, fbm2(q + vec3(0.0, 0.0, e)) - h0) / e;
+	g -= n * dot(g, n);
+	return normalize(n - g * strength);
+}

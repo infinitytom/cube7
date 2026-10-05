@@ -106,6 +106,12 @@ func set_objective(index: int, text: String, pos := Vector3.INF) -> void:
 	objective_pos = pos
 	objective_changed.emit(index, text, pos)
 
+## 临时改写当前目标（不推进序号）：比如走到 Boss 门口才发现缺关键道具，先把目标指向关键道具
+func override_objective(text: String, pos := Vector3.INF) -> void:
+	objective_text = text
+	objective_pos = pos
+	objective_changed.emit(objective_index, text, pos)
+
 ## 关卡开始时调用：重置收集进度
 func reset_for_level(forms: Array[bool], jump: bool, kill: float, fragment_count: int) -> void:
 	unlocked_forms = forms.duplicate()

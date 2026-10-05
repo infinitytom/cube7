@@ -76,6 +76,14 @@ func _build_world() -> void:
 	_graveyard()
 	_liner()
 	_lighthouse_ruin()
+	# 出生点脚下垫平一块（平滑地形的沙丘是圆的，球一落地就会顺着坡滚进海里）
+	for z in range(SPAWN.z - 2, SPAWN.z + 3):
+		for x in range(SPAWN.x - 2, SPAWN.x + 3):
+			for y in range(G - 3, G):
+				if world.get_block(Vector3i(x, y, z)) == Blocks.AIR:
+					world.set_block(Vector3i(x, y, z), Blocks.RUSTDUNE)
+			for y in range(G, G + 3):
+				world.set_block(Vector3i(x, y, z), Blocks.AIR)
 	world.rebuild_all()
 	decor.commit()
 	world.flush_dirty()
@@ -459,6 +467,8 @@ func _setup_boss() -> void:
 	var trig := zone(Zone, Vector3i(D_C.x - D_R + 2, G, D_C.y - D_R), Vector3i(D_C.x + D_R, G + 6, D_C.y + D_R))
 	trig.player_entered.connect(func() -> void:
 		if is_instance_valid(worm) and not worm.active and not boss_done:
+			if not ChapterKey.unseal(self, worm, "rust"):
+				return
 			boss_started = true
 			sea.set_calm(SEA_LOW)
 			worm.start()

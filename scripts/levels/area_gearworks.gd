@@ -597,6 +597,8 @@ func _setup_boss() -> void:
 	var trig := zone(Zone, Vector3i(ARENA.x - 9, G + 10, ARENA.z - 7), Vector3i(ARENA.x + 6, G + 14, ARENA.z + 7))
 	trig.player_entered.connect(func() -> void:
 		if is_instance_valid(boss) and not boss.active:
+			if not ChapterKey.unseal(self, boss, "gearworks"):
+				return
 			boss.start()
 			Music.play_area("boss")
 			Music.set_override("explore")

@@ -159,7 +159,9 @@ func _run() -> void:
 		P.debug_boost = false
 		P.debug_input = Vector2.ZERO
 		# 砂子没填满时对岸会有一级小台阶——跳一下就上去了
-		if vx(P.global_position).x < 62:
+		for tries in 3:
+			if vx(P.global_position).x >= 62:
+				break
 			P.debug_input = Vector2(0, -1)
 			P.debug_jump_held = true
 			P.debug_jump_pressed = true
@@ -204,11 +206,35 @@ func _run() -> void:
 	await tp(Vector3i(72, G + 6, 52), Vector3(10, 0, 0))
 	await wait(1.5)
 	check(vx(P.global_position).x < 76, "滚球撞不开泥土墙（x=%d）" % vx(P.global_position).x)
-	# 普通地面钻不下去
+	# 普通地面也能往下钻（钻头原地挖掘），而且能自己出来
 	P.apply_form(MorphBall.DRILL, false)
 	await tp(Vector3i(56, G + 6, 52))
 	await go(Vector2.ZERO, 1.5, true)
-	check(vx(P.global_position).y >= G + 6, "普通地面上往下钻不会把自己困住（y=%d）" % vx(P.global_position).y)
+	var dug := vx(P.global_position).y
+	check(dug < G + 6, "普通地面上原地往下钻，钻下去了（y=%d）" % dug)
+	if OS.has_environment("CUBE7_DRILL_DBG"):
+		var b0 := vx(P.global_position)
+		for xx in range(b0.x - 2, b0.x + 9):
+			var top := -1
+			var bt := 0
+			for yy in range(G + 12, G - 6, -1):
+				if W.get_block(Vector3i(xx, yy, b0.z)) != Blocks.AIR:
+					top = yy
+					bt = W.get_block(Vector3i(xx, yy, b0.z))
+					break
+			print("    col x=%d top=%d %s" % [xx, top, Blocks.DEFS[bt].name])
+	await go(Vector2(1, 0), 3.0)
+	# 坑底碰到钻不动的崖岩时口子会陡一点：像玩家一样跳一下
+	for tries in 3:
+		if vx(P.global_position).y >= G + 5:
+			break
+		P.debug_input = Vector2(1, 0)
+		P.debug_jump_held = true
+		P.debug_jump_pressed = true
+		await wait(1.5)
+		P.debug_jump_held = false
+		P.debug_input = Vector2.ZERO
+	check(vx(P.global_position).y >= G + 5, "钻出来的坑能自己爬出来（y=%d）" % vx(P.global_position).y)
 	P.apply_form(MorphBall.DRILL, false)
 	await tp(Vector3i(73, G + 6, 52))
 	await go(Vector2(0, -1), 6.0, true)
@@ -257,7 +283,17 @@ func _run() -> void:
 	await tp(Vector3i(104, G + 2, 45))
 	await go(Vector2(1, 0), 7.0, false, true)
 	await wait(1.0)
-	check(GameState.level_complete, "沿光桥到达终点浮岛，关卡完成（最后位置 y=%d, z=%d）" % [vx(P.global_position).y, vx(P.global_position).z])
+	check(vx(P.global_position).y >= G + 10 and is_instance_valid(L.hulk) and L.hulk.active, "沿光桥登上终点浮岛，锈根兽醒了（y=%d）" % vx(P.global_position).y)
+	check(not GameState.level_complete, "锈根兽没倒下之前，终点不会出现")
+	# 锈根兽：三次“落石 → 翻倒 → 一击”
+	if is_instance_valid(L.hulk):
+		for k in 3:
+			L.hulk.take_hit(L.hulk.global_position, "crush")
+			L.hulk._hurt(P.global_position)
+	await wait(0.5)
+	await tp(Vector3i(104, G + 11, 79))
+	await wait(1.5)
+	check(GameState.level_complete, "打倒锈根兽，碰到终点浮岛的引擎节点，关卡完成（最后位置 y=%d, z=%d）" % [vx(P.global_position).y, vx(P.global_position).z])
 
 	# 12. 掉进云海 → 回检查点
 	await tp(Vector3i(30, 10, 30))

@@ -22,7 +22,7 @@ func _ready() -> void:
 func _run() -> void:
 	print("===== 探索系统测试 =====")
 	await wait(0.5)
-	var cores := get_tree().get_nodes_in_group("scan_target")
+	var cores := get_tree().get_nodes_in_group("scan_target").filter(func(n: Node) -> bool: return n is EchoCore)
 	check(GameState.echo_total >= 3 and cores.size() == GameState.echo_total, "第一章埋下 %d 颗回声晶核（节点 %d）" % [GameState.echo_total, cores.size()])
 	# 每颗晶核都在实心地层包围的空洞里
 	var buried := 0
@@ -111,6 +111,53 @@ func _run() -> void:
 				fell = true
 		await wait(2.0)
 		check(fell and W.vget(boulder) != Blocks.ROCK, "撞断木架：木架连锁崩塌，圆石整块掉下来")
+	# ---- 主线：关键道具 → Boss
+	var key := get_tree().get_first_node_in_group("key_relic") as KeyRelic
+	check(key != null, "第一章放下了关键道具「%s」" % ChapterKey.key_name("greenhouse"))
+	var lv1 := get_parent().level as AreaGreenhouse
+	var hulk := lv1.hulk
+	check(hulk != null and not hulk.active, "终点浮岛上有锈根兽，还没开打")
+	if key and hulk:
+		# 没有芯片：封印挡住
+		var ok := ChapterKey.unseal(lv1, hulk, "greenhouse")
+		check(not ok and hulk.get_node_or_null("RustSeal") != null and GameState.objective_text.contains("关键道具"), "没有芯片：Boss 有锈封印，目标改成去找芯片")
+		# 扫描能标出关键道具
+		P.teleport(key.global_position + Vector3.UP * 3.0)
+		await wait(0.3)
+		var sc := get_tree().get_first_node_in_group("echo_scan") as EchoScan
+		sc._cd = 0.0
+		sc.scan()
+		check(sc.last_hits.any(func(h: Dictionary) -> bool: return h.kind == "key"), "扫描标出金色的关键道具")
+		P.teleport(key.global_position)
+		await wait(0.8)
+		check(ChapterKey.has("greenhouse") and Evolutions.has("echo_range"), "拿到芯片：解锁本章进化「深层回声」")
+		check(ChapterKey.unseal(lv1, hulk, "greenhouse"), "带着芯片：封印碎掉")
+		hulk.start()
+		await wait(0.2)
+		# 落石：把锈根兽放到第一处木架旁边，撞断木架
+		var tc: Array = lv1._trap_cells[0]
+		var pillar: Vector3i = tc[0][0]
+		hulk.global_position = W.vcenter(pillar) + Vector3(0.6, 0.0, 0.0)
+		hulk.velocity = Vector3.ZERO
+		hulk.ai = false
+		await wait(0.3)
+		W.break_sphere(W.vcenter(pillar) + Vector3(0.1, 0.3, 0.1), 0.6, "impact", 12.0, Vector3.RIGHT)
+		var flipped := false
+		for k in 40:
+			await wait(0.05)
+			if hulk.state == Scrapling.St.FLIPPED:
+				flipped = true
+				break
+		check(flipped, "落石砸中锈根兽：岩甲裂开、翻倒")
+		var hp0 := hulk.hp
+		hulk._hurt(P.global_position)
+		check(hulk.hp == hp0 - 1, "翻倒时一击：剩 %d" % hulk.hp)
+		hulk.take_hit(hulk.global_position, "crush")
+		hulk._hurt(P.global_position)
+		hulk.take_hit(hulk.global_position, "crush")
+		hulk._hurt(P.global_position)
+		await wait(0.5)
+		check(lv1.hulk_done and lv1.find_children("*", "Goal", true, false).size() >= 1, "打倒锈根兽：终点出现")
 	if fails.is_empty():
 		print("===== 探索系统测试全部通过 =====")
 	else:
